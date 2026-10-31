@@ -36,8 +36,8 @@ R"FSHTML(
         +'body.winter-lock button,body.winter-lock input,body.winter-lock select,body.winter-lock canvas,body.winter-lock svg{opacity:.45}';
       document.head.appendChild(st);
       var b=document.createElement('div'); b.id='winter-lock';
-      b.style.cssText='position:sticky;top:0;z-index:9999;margin:8px 12px;padding:10px 12px;border-radius:10px;background:#1e3a5f;color:#dbeafe;font:600 14px system-ui,sans-serif';
-      b.innerHTML='&#10052; Winter sleep active — controls are disabled. <a href="/" style="color:#93c5fd">Go to the home page to resume normal operation</a>.';
+      b.style.cssText='position:sticky;top:0;z-index:9999;margin:8px 12px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--green-dim);color:var(--text);border:1px solid var(--border);font:600 14px var(--font)';
+      b.innerHTML='&#10052; Winter sleep active — controls are disabled. <a href="/" style="color:var(--green)">Go to the home page to resume normal operation</a>.';
       document.body.prepend(b); document.body.classList.add('winter-lock');
       var off=function(){document.querySelectorAll('button,input,select,textarea').forEach(function(e){e.disabled=true;});};
       off(); new MutationObserver(off).observe(document.body,{childList:true,subtree:true});
@@ -46,35 +46,50 @@ R"FSHTML(
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',lock);else lock();
 })();
 </script>
+<!-- Hearth's faces, matching the dashboard studio. Non-blocking: on the setup
+     hotspot there is no internet, so this must never hold up first paint --
+     media="print" keeps it off the critical path and onload promotes it. The
+     system stack in --font/--display/--mono covers the offline case. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap">
 <style>
 /* ---- Muscovy design system ------------------------------------------ */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 :root,:root[data-theme="dark"]{
   color-scheme:dark;
-  --bg:#0d1613;--bg2:#15231d;--bg3:#1b2d26;
-  --green:#5fc8d6;--green-dim:#173e45;--green-glow:rgba(95,200,214,.28);
-  --pond:#5a9d7c;--pond-dim:rgba(90,157,124,.16);
-  --orange:#f0a24a;--orange-dim:rgba(240,162,74,.14);
-  --red:#ff6a57;--red-dim:rgba(255,106,87,.14);
-  --text:#f1ecdc;--text-mid:#9aa893;--text-dim:#4a5a52;
-  --border:#2a3a31;--btn:#1a2a24;--btn-hover:#22352e;
-  --radius:16px;--radius-sm:10px;
-  --radar-bg:#0e2a2c;--radar-grid:#1b4448;
-  --shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px -12px rgba(0,0,0,.6);
-  --font:"Avenir Next","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",sans-serif;
-  --mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --bg:#0e1014;--bg2:#15181e;--bg3:#1c2028;
+  --green:#8a94ff;--green-dim:#222842;--green-glow:rgba(138,148,255,.28);
+  --accent-ink:#0e1014;
+  --pond:#b49bff;--pond-dim:rgba(180,155,255,.16);
+  --orange:#ff9f40;--orange-dim:rgba(255,159,64,.14);
+  --red:#ff5a5a;--red-dim:rgba(255,90,90,.14);
+  --ok:#2fc77a;--ok-dim:rgba(47,199,122,.22);
+  --text:#eceef3;--text-mid:#8c92a1;--text-dim:#4d5461;
+  --border:#252932;--btn:#15181e;--btn-hover:#1c2028;
+  --radius:14px;--radius-sm:10px;
+  --radar-bg:#0a0c0f;--radar-grid:#272c38;
+  --shadow:0 1px 2px rgba(0,0,0,.25),0 10px 30px -18px rgba(0,0,0,.65);
+  /* Hearth's faces, then system fallbacks: the device serves these pages from
+     its own AP, which has no internet, so we never link Google Fonts. */
+  --font:"Geist","Inter",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --display:"Bricolage Grotesque","Geist",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"Geist Mono",ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Menlo,Consolas,monospace;
 }
 :root[data-theme="light"]{
   color-scheme:light;
-  --bg:#f3efe4;--bg2:#fffdf6;--bg3:#ebe5d5;
-  --green:#2a7f8f;--green-dim:#d6ecef;--green-glow:rgba(42,127,143,.22);
-  --pond:#2f5a45;--pond-dim:rgba(47,90,69,.12);
-  --orange:#b8671a;--orange-dim:rgba(184,103,26,.12);
-  --red:#c43a2f;--red-dim:rgba(196,58,47,.10);
-  --text:#15241d;--text-mid:#5e6b5a;--text-dim:#b8b3a3;
-  --border:#d9d2bf;--btn:#f7f3e8;--btn-hover:#ece6d6;
-  --radar-bg:#dff0f2;--radar-grid:#b9d8dc;
-  --shadow:0 1px 2px rgba(21,36,29,.06),0 8px 24px -12px rgba(21,36,29,.18);
+  --bg:#f3f4f7;--bg2:#ffffff;--bg3:#e9ebf0;
+  --green:#4352f0;--green-dim:#dcdff6;--green-glow:rgba(67,82,240,.22);
+  --accent-ink:#ffffff;
+  --pond:#7b4dff;--pond-dim:rgba(123,77,255,.12);
+  --orange:#c87210;--orange-dim:rgba(200,114,16,.12);
+  --red:#d23b3b;--red-dim:rgba(210,59,59,.10);
+  --ok:#1f9d63;--ok-dim:rgba(31,157,99,.18);
+  --text:#15171c;--text-mid:#666c7a;--text-dim:#9aa0ad;
+  --border:#e2e4ea;--btn:#ffffff;--btn-hover:#eef0f4;
+  --radar-bg:#e9ebf0;--radar-grid:#c5cbd8;
+  --shadow:0 1px 2px rgba(16,18,26,.05),0 10px 30px -18px rgba(16,18,26,.28);
 }
 html,body{background:var(--bg);}
 body{color:var(--text);font:15px/1.45 var(--font);-webkit-font-smoothing:antialiased;}
@@ -91,23 +106,23 @@ header{display:flex;align-items:center;gap:12px;padding:14px 18px 12px;
   border-radius:50%;border:1px solid var(--border);background:var(--bg2);color:var(--text);
   text-decoration:none;font-size:18px;line-height:1;flex-shrink:0;}
 .back:active{background:var(--bg3);}
-.logo{display:inline-flex;align-items:center;gap:8px;font-weight:800;font-size:17px;
+.logo{display:inline-flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;font-size:17px;
   letter-spacing:-.01em;color:var(--text);text-decoration:none;white-space:nowrap;}
 .logo .duck{flex-shrink:0;}
-.hdr-title,.header-mid{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+.hdr-title,.header-mid{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
   color:var(--text-mid);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .page-logo{display:none;}
 #conn,.usage{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-mid);margin-left:auto;white-space:nowrap;}
 .usage{font-size:11px;max-width:42%;overflow:hidden;text-overflow:ellipsis;display:block;}
 #conn-dot{width:8px;height:8px;border-radius:50%;background:var(--text-dim);transition:all .4s;flex-shrink:0;}
-#conn-dot.ok{background:var(--green);box-shadow:0 0 0 3px var(--green-dim);}
+#conn-dot.ok{background:var(--ok);box-shadow:0 0 0 3px var(--ok-dim);}
 #conn-dot.err{background:var(--red);box-shadow:0 0 0 3px var(--red-dim);}
 
 /* sections and cards */
 main{padding:18px 18px 28px;}
 section{margin-bottom:22px;}
 .sec-hdr{display:flex;align-items:center;justify-content:space-between;margin:0 2px 10px;gap:10px;}
-.sec-title{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--pond);}
+.sec-title{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mid);}
 .sec-btn,#refresh-btn{font-size:13px;font-weight:600;color:var(--green);background:var(--bg2);
   padding:6px 12px;border-radius:999px;cursor:pointer;border:1px solid var(--border);text-decoration:none;}
 .sec-btn:active,#refresh-btn:active{background:var(--green-dim);}
@@ -120,11 +135,11 @@ section{margin-bottom:22px;}
 /* buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 16px;
   border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--btn);color:var(--text);
-  font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;
+  font-size:13.5px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;
   transition:background .12s,transform .06s;}
 .btn:active{background:var(--btn-hover);transform:translateY(1px);}
 .btn:disabled{opacity:.45;cursor:default;transform:none;}
-.btn-primary,.btn-green{background:var(--green);border-color:var(--green);color:#fff;}
+.btn-primary,.btn-green{background:var(--green);border-color:var(--green);color:var(--accent-ink);}
 .btn-primary:active,.btn-green:active{filter:brightness(.92);background:var(--green);}
 .btn-danger,.btn-red{color:var(--red);border-color:var(--red);background:transparent;}
 .btn-danger:active,.btn-red:active{background:var(--red-dim);}
@@ -162,7 +177,7 @@ body.winter-lock select,body.winter-lock a{opacity:.45;}
 
 body{max-width:640px;margin:0 auto;padding-bottom:24px;}
 .usage{font-family:var(--mono);}
-.upload-title{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--pond);margin-bottom:12px;}
+.upload-title{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mid);margin-bottom:12px;}
 .upload-row{display:flex;gap:8px;align-items:center;}
 .file-inp{flex:1;color:var(--text-mid);font-size:13px;padding:8px 10px;cursor:pointer;}
 .file-inp::file-selector-button{background:var(--btn);border:1px solid var(--border);border-radius:6px;color:var(--text);

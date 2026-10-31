@@ -33,8 +33,8 @@
         +'body.winter-lock button,body.winter-lock input,body.winter-lock select,body.winter-lock canvas,body.winter-lock svg{opacity:.45}';
       document.head.appendChild(st);
       var b=document.createElement('div'); b.id='winter-lock';
-      b.style.cssText='position:sticky;top:0;z-index:9999;margin:8px 12px;padding:10px 12px;border-radius:10px;background:#1e3a5f;color:#dbeafe;font:600 14px system-ui,sans-serif';
-      b.innerHTML='&#10052; Winter sleep active — controls are disabled. <a href="/" style="color:#93c5fd">Go to the home page to resume normal operation</a>.';
+      b.style.cssText='position:sticky;top:0;z-index:9999;margin:8px 12px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--green-dim);color:var(--text);border:1px solid var(--border);font:600 14px var(--font)';
+      b.innerHTML='&#10052; Winter sleep active — controls are disabled. <a href="/" style="color:var(--green)">Go to the home page to resume normal operation</a>.';
       document.body.prepend(b); document.body.classList.add('winter-lock');
       var off=function(){document.querySelectorAll('button,input,select,textarea').forEach(function(e){e.disabled=true;});};
       off(); new MutationObserver(off).observe(document.body,{childList:true,subtree:true});
@@ -43,35 +43,50 @@
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',lock);else lock();
 })();
 </script>
+<!-- Hearth's faces, matching the dashboard studio. Non-blocking: on the setup
+     hotspot there is no internet, so this must never hold up first paint --
+     media="print" keeps it off the critical path and onload promotes it. The
+     system stack in --font/--display/--mono covers the offline case. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap">
 <style>
 /* ---- Muscovy design system ------------------------------------------ */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 :root,:root[data-theme="dark"]{
   color-scheme:dark;
-  --bg:#0d1613;--bg2:#15231d;--bg3:#1b2d26;
-  --green:#5fc8d6;--green-dim:#173e45;--green-glow:rgba(95,200,214,.28);
-  --pond:#5a9d7c;--pond-dim:rgba(90,157,124,.16);
-  --orange:#f0a24a;--orange-dim:rgba(240,162,74,.14);
-  --red:#ff6a57;--red-dim:rgba(255,106,87,.14);
-  --text:#f1ecdc;--text-mid:#9aa893;--text-dim:#4a5a52;
-  --border:#2a3a31;--btn:#1a2a24;--btn-hover:#22352e;
-  --radius:16px;--radius-sm:10px;
-  --radar-bg:#0e2a2c;--radar-grid:#1b4448;
-  --shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px -12px rgba(0,0,0,.6);
-  --font:"Avenir Next","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",sans-serif;
-  --mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --bg:#0e1014;--bg2:#15181e;--bg3:#1c2028;
+  --green:#8a94ff;--green-dim:#222842;--green-glow:rgba(138,148,255,.28);
+  --accent-ink:#0e1014;
+  --pond:#b49bff;--pond-dim:rgba(180,155,255,.16);
+  --orange:#ff9f40;--orange-dim:rgba(255,159,64,.14);
+  --red:#ff5a5a;--red-dim:rgba(255,90,90,.14);
+  --ok:#2fc77a;--ok-dim:rgba(47,199,122,.22);
+  --text:#eceef3;--text-mid:#8c92a1;--text-dim:#4d5461;
+  --border:#252932;--btn:#15181e;--btn-hover:#1c2028;
+  --radius:14px;--radius-sm:10px;
+  --radar-bg:#0a0c0f;--radar-grid:#272c38;
+  --shadow:0 1px 2px rgba(0,0,0,.25),0 10px 30px -18px rgba(0,0,0,.65);
+  /* Hearth's faces, then system fallbacks: the device serves these pages from
+     its own AP, which has no internet, so we never link Google Fonts. */
+  --font:"Geist","Inter",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --display:"Bricolage Grotesque","Geist",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"Geist Mono",ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Menlo,Consolas,monospace;
 }
 :root[data-theme="light"]{
   color-scheme:light;
-  --bg:#f3efe4;--bg2:#fffdf6;--bg3:#ebe5d5;
-  --green:#2a7f8f;--green-dim:#d6ecef;--green-glow:rgba(42,127,143,.22);
-  --pond:#2f5a45;--pond-dim:rgba(47,90,69,.12);
-  --orange:#b8671a;--orange-dim:rgba(184,103,26,.12);
-  --red:#c43a2f;--red-dim:rgba(196,58,47,.10);
-  --text:#15241d;--text-mid:#5e6b5a;--text-dim:#b8b3a3;
-  --border:#d9d2bf;--btn:#f7f3e8;--btn-hover:#ece6d6;
-  --radar-bg:#dff0f2;--radar-grid:#b9d8dc;
-  --shadow:0 1px 2px rgba(21,36,29,.06),0 8px 24px -12px rgba(21,36,29,.18);
+  --bg:#f3f4f7;--bg2:#ffffff;--bg3:#e9ebf0;
+  --green:#4352f0;--green-dim:#dcdff6;--green-glow:rgba(67,82,240,.22);
+  --accent-ink:#ffffff;
+  --pond:#7b4dff;--pond-dim:rgba(123,77,255,.12);
+  --orange:#c87210;--orange-dim:rgba(200,114,16,.12);
+  --red:#d23b3b;--red-dim:rgba(210,59,59,.10);
+  --ok:#1f9d63;--ok-dim:rgba(31,157,99,.18);
+  --text:#15171c;--text-mid:#666c7a;--text-dim:#9aa0ad;
+  --border:#e2e4ea;--btn:#ffffff;--btn-hover:#eef0f4;
+  --radar-bg:#e9ebf0;--radar-grid:#c5cbd8;
+  --shadow:0 1px 2px rgba(16,18,26,.05),0 10px 30px -18px rgba(16,18,26,.28);
 }
 html,body{background:var(--bg);}
 body{color:var(--text);font:15px/1.45 var(--font);-webkit-font-smoothing:antialiased;}
@@ -88,23 +103,23 @@ header{display:flex;align-items:center;gap:12px;padding:14px 18px 12px;
   border-radius:50%;border:1px solid var(--border);background:var(--bg2);color:var(--text);
   text-decoration:none;font-size:18px;line-height:1;flex-shrink:0;}
 .back:active{background:var(--bg3);}
-.logo{display:inline-flex;align-items:center;gap:8px;font-weight:800;font-size:17px;
+.logo{display:inline-flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;font-size:17px;
   letter-spacing:-.01em;color:var(--text);text-decoration:none;white-space:nowrap;}
 .logo .duck{flex-shrink:0;}
-.hdr-title,.header-mid{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+.hdr-title,.header-mid{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
   color:var(--text-mid);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .page-logo{display:none;}
 #conn,.usage{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-mid);margin-left:auto;white-space:nowrap;}
 .usage{font-size:11px;max-width:42%;overflow:hidden;text-overflow:ellipsis;display:block;}
 #conn-dot{width:8px;height:8px;border-radius:50%;background:var(--text-dim);transition:all .4s;flex-shrink:0;}
-#conn-dot.ok{background:var(--green);box-shadow:0 0 0 3px var(--green-dim);}
+#conn-dot.ok{background:var(--ok);box-shadow:0 0 0 3px var(--ok-dim);}
 #conn-dot.err{background:var(--red);box-shadow:0 0 0 3px var(--red-dim);}
 
 /* sections and cards */
 main{padding:18px 18px 28px;}
 section{margin-bottom:22px;}
 .sec-hdr{display:flex;align-items:center;justify-content:space-between;margin:0 2px 10px;gap:10px;}
-.sec-title{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--pond);}
+.sec-title{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mid);}
 .sec-btn,#refresh-btn{font-size:13px;font-weight:600;color:var(--green);background:var(--bg2);
   padding:6px 12px;border-radius:999px;cursor:pointer;border:1px solid var(--border);text-decoration:none;}
 .sec-btn:active,#refresh-btn:active{background:var(--green-dim);}
@@ -117,11 +132,11 @@ section{margin-bottom:22px;}
 /* buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 16px;
   border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--btn);color:var(--text);
-  font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;
+  font-size:13.5px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;
   transition:background .12s,transform .06s;}
 .btn:active{background:var(--btn-hover);transform:translateY(1px);}
 .btn:disabled{opacity:.45;cursor:default;transform:none;}
-.btn-primary,.btn-green{background:var(--green);border-color:var(--green);color:#fff;}
+.btn-primary,.btn-green{background:var(--green);border-color:var(--green);color:var(--accent-ink);}
 .btn-primary:active,.btn-green:active{filter:brightness(.92);background:var(--green);}
 .btn-danger,.btn-red{color:var(--red);border-color:var(--red);background:transparent;}
 .btn-danger:active,.btn-red:active{background:var(--red-dim);}
@@ -164,7 +179,7 @@ input,textarea{-webkit-user-select:text;user-select:text;}
 header{padding:12px 16px 10px;}
 .header-mid{flex:1;text-align:center;}
 #name-row{flex-shrink:0;display:flex;align-items:center;gap:10px;padding:8px 18px 6px;border-top:1px solid var(--border);}
-#name-row label{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--pond);white-space:nowrap;}
+#name-row label{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mid);white-space:nowrap;}
 #zone-name{flex:1;background:transparent;border:none;border-bottom:1px solid var(--border);border-radius:0;
   font-size:16px;font-weight:700;padding:4px 2px;width:auto;}
 #zone-name:focus{outline:none;border-bottom-color:var(--green);}
@@ -189,10 +204,10 @@ header{padding:12px 16px 10px;}
 .dp{display:flex;align-items:center;justify-content:center;background:var(--bg2);border:1px solid var(--border);
   border-radius:14px;color:var(--text-mid);font-size:20px;cursor:pointer;touch-action:manipulation;
   -webkit-user-select:none;user-select:none;transition:background .1s,color .1s,transform .06s;box-shadow:var(--shadow);}
-.dp:active,.dp.held{background:var(--green);color:#fff;border-color:var(--green);transform:scale(.97);}
+.dp:active,.dp.held{background:var(--green);color:var(--accent-ink);border-color:var(--green);transform:scale(.97);}
 .dp-empty{background:transparent;border:none;pointer-events:none;box-shadow:none;}
 #btn-add{background:var(--green-dim);border-color:var(--green)!important;color:var(--green);font-size:30px;font-weight:300;}
-#btn-add:active{background:var(--green);color:#fff;}
+#btn-add:active{background:var(--green);color:var(--accent-ink);}
 .dp.at-limit{border-color:var(--orange)!important;color:var(--orange)!important;}
 .dp.at-limit:active{background:var(--orange-dim);}
 /* secondary row */
@@ -201,10 +216,10 @@ header{padding:12px 16px 10px;}
   color:var(--text-mid);font-size:11.5px;font-weight:600;cursor:pointer;transition:all .1s;white-space:nowrap;}
 .sbtn:active{background:var(--bg3);color:var(--text);}
 #btn-water{border-color:var(--green)!important;color:var(--green);}
-#btn-water.on{background:var(--green)!important;color:#fff!important;}
+#btn-water.on{background:var(--green)!important;color:var(--accent-ink)!important;}
 #btn-trim{margin-top:6px;padding:4px 10px;font-size:11px;font-weight:600;background:var(--bg);border:1px solid var(--green);
   border-radius:999px;color:var(--green);cursor:pointer;white-space:nowrap;transition:all .15s;display:block;width:calc(100% - 16px);margin-inline:8px;}
-#btn-trim:not(.water-off):active{background:var(--green);color:#fff;}
+#btn-trim:not(.water-off):active{background:var(--green);color:var(--accent-ink);}
 #btn-trim.water-off{color:var(--text-dim);border-color:var(--border);cursor:default;}
 #btn-trim.busy{opacity:.6;pointer-events:none;}
 /* footer */
@@ -213,7 +228,7 @@ header{padding:12px 16px 10px;}
   color:var(--text-mid);font-size:15px;font-weight:600;cursor:pointer;transition:all .1s;}
 #btn-cancel:active{background:var(--bg3);}
 #btn-save{flex:2;padding:15px 0;background:var(--green);border:1px solid var(--green);border-radius:var(--radius);
-  color:#fff;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 8px 24px -10px var(--green-glow);transition:all .1s;}
+  color:var(--accent-ink);font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 8px 24px -10px var(--green-glow);transition:all .1s;}
 #btn-save:disabled{background:var(--bg3);border-color:var(--border);color:var(--text-dim);box-shadow:none;cursor:default;}
 #btn-save:not(:disabled):active{filter:brightness(.92);}
 #toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);
@@ -366,7 +381,16 @@ function toggleHeatmap(){
   resizeCanvas();
 }
 
+// Canvas paints literal colours, so the draw functions resolve the same tokens
+// the stylesheet uses. Alpha rides along as the #RRGGBBAA suffix.
+function PAL(){
+  const c=getComputedStyle(document.documentElement), g=(n,f)=>c.getPropertyValue(n).trim()||f;
+  return {grid:g('--radar-grid','#272c38'), mid:g('--text-mid','#8c92a1'),
+          dim: g('--text-dim','#4d5461'),   accent:g('--green','#8a94ff'),
+          mark:g('--orange','#ff9f40'),     ink:g('--accent-ink','#0e1014')};
+}
 function drawHeatMap(W, H, cx, cy, maxR) {
+  const P=PAL();
   if (!heatPasses || ST.points.length < 3) return;
   const passes = heatPasses;
 
@@ -525,23 +549,23 @@ function drawHeatMap(W, H, cx, cy, maxR) {
     if (!lastRun) {
       ctx.save();
       ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillStyle='rgba(200,224,212,0.55)';
+      ctx.fillStyle=P.mid;
       ctx.fillText('No watering data yet',cx,cy-14);
-      ctx.font='11px sans-serif';ctx.fillStyle='rgba(200,224,212,0.35)';
+      ctx.font='11px sans-serif';ctx.fillStyle=P.dim;
       ctx.fillText('Run a watering cycle first',cx,cy+6);
       ctx.restore(); return;
     }
     if (waterCSVRows === null) {
       ctx.save();
       ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillStyle='rgba(200,224,212,0.55)';
+      ctx.fillStyle=P.mid;
       ctx.fillText('Loading watering data...',cx,cy);
       ctx.restore(); return;
     }
     if (!waterCSVRows.length) {
       ctx.save();
       ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillStyle='rgba(200,224,212,0.55)';
+      ctx.fillStyle=P.mid;
       ctx.fillText('No CSV data -- water zone to generate',cx,cy);
       ctx.restore(); return;
     }
@@ -658,7 +682,7 @@ function drawHeatMap(W, H, cx, cy, maxR) {
           :ctx.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);
       });
       ctx.closePath();
-      ctx.strokeStyle='rgba(95,200,214,0.6)';
+      ctx.strokeStyle=P.accent+'99';
       ctx.lineWidth=1.5;
       ctx.stroke();
       ctx.restore();
@@ -767,7 +791,7 @@ function draw(){
   // Only the inside of the outermost circle is filled; the corners
   // stay transparent and show the page bg.
   const radarBg = getComputedStyle(document.documentElement)
-                  .getPropertyValue('--radar-bg').trim() || '#0e2a2c';
+                  .getPropertyValue('--radar-bg').trim() || '#0a0c0f';
   ctx.beginPath(); ctx.arc(cx,cy,maxR,0,Math.PI*2);
   ctx.fillStyle = radarBg; ctx.fill();
 
@@ -775,8 +799,11 @@ function draw(){
   // tuned to sit just barely above the radar bg). Labels use
   // --text-mid (more legible) with the foot symbol "5'" / "10'".
   const css        = getComputedStyle(document.documentElement);
-  const ringColor  = css.getPropertyValue('--radar-grid').trim() || '#1b4448';
-  const labelColor = css.getPropertyValue('--text-mid').trim() || '#608070';
+  const ringColor  = css.getPropertyValue('--radar-grid').trim() || '#272c38';
+  const labelColor = css.getPropertyValue('--text-mid').trim() || '#8c92a1';
+  const accentCol  = css.getPropertyValue('--green').trim()      || '#8a94ff';
+  const markCol    = css.getPropertyValue('--orange').trim()     || '#ff9f40';
+  const inkCol     = css.getPropertyValue('--accent-ink').trim() || '#0e1014';
   ctx.strokeStyle = ringColor;
   ctx.lineWidth   = 0.7;
   // Range rings + labels — tick list derived from the domain so the grid
@@ -808,14 +835,14 @@ function draw(){
             : ctx.lineTo(cx+Math.cos(rad)*rr, cy+Math.sin(rad)*rr);
     });
     ctx.closePath();
-    ctx.fillStyle='rgba(255,140,0,.09)'; ctx.fill();
-    ctx.strokeStyle='rgba(255,140,0,.55)'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.fillStyle=markCol+'17'; ctx.fill();
+    ctx.strokeStyle=markCol+'8C'; ctx.lineWidth=1.5; ctx.stroke();
   }
 
   // Current throw ring (dashed)
   const throwR=(ST.throw_mm/_edScale())*maxR;
   ctx.beginPath(); ctx.arc(cx,cy,throwR,0,Math.PI*2);
-  ctx.strokeStyle='rgba(63,182,198,.12)'; ctx.lineWidth=1;
+  ctx.strokeStyle=accentCol+'1F'; ctx.lineWidth=1;
   ctx.setLineDash([3,5]); ctx.stroke(); ctx.setLineDash([]);
 
   // Overlays (drawn before nozzle line so line stays on top)
@@ -830,7 +857,7 @@ function draw(){
       const tr = (waterTrail[i].r/_edScale())*maxR;
       const tbrad = (waterTrail[i].b - 90)*Math.PI/180;
       ctx.beginPath(); ctx.arc(cx+Math.cos(tbrad)*tr, cy+Math.sin(tbrad)*tr, 2.5, 0, Math.PI*2);
-      ctx.fillStyle=`rgba(63,182,198,${(age*0.55).toFixed(2)})`; ctx.fill();
+      ctx.fillStyle=accentCol+Math.round(age*0.55*255).toString(16).padStart(2,'0'); ctx.fill();
     }
   }
 
@@ -838,20 +865,20 @@ function draw(){
   const brad=(ST.bearing-90)*Math.PI/180;
   const bx=cx+Math.cos(brad)*maxR, by=cy+Math.sin(brad)*maxR;
   ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(bx,by);
-  ctx.strokeStyle='rgba(63,182,198,.55)'; ctx.lineWidth=1.5;
-  ctx.shadowBlur=14; ctx.shadowColor='#3fb6c6'; ctx.stroke(); ctx.shadowBlur=0;
+  ctx.strokeStyle=accentCol+'8C'; ctx.lineWidth=1.5;
+  ctx.shadowBlur=14; ctx.shadowColor=accentCol; ctx.stroke(); ctx.shadowBlur=0;
 
   // Throw indicator dot — at actual throw when valve open, else slider position
   const actualThrowR = actualThrowMm > 100 ? (actualThrowMm/_edScale())*maxR : throwR;
   const dotIsActual = actualThrowMm > 100;
   const tx=cx+Math.cos(brad)*actualThrowR, ty=cy+Math.sin(brad)*actualThrowR;
   ctx.beginPath(); ctx.arc(tx,ty,5.5,0,Math.PI*2);
-  ctx.fillStyle = dotIsActual ? '#3fb6c6' : 'rgba(63,182,198,.5)';
+  ctx.fillStyle = dotIsActual ? accentCol : accentCol+'80';
   ctx.shadowBlur = dotIsActual ? 22 : 18;
-  ctx.shadowColor='#3fb6c6'; ctx.fill(); ctx.shadowBlur=0;
+  ctx.shadowColor=accentCol; ctx.fill(); ctx.shadowBlur=0;
   if (dotIsActual) {
     ctx.beginPath(); ctx.arc(tx,ty,9,0,Math.PI*2);
-    ctx.strokeStyle='rgba(63,182,198,.35)'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.strokeStyle=accentCol+'59'; ctx.lineWidth=1.5; ctx.stroke();
   }
 
   // Perimeter points
@@ -861,11 +888,11 @@ function draw(){
     const x=cx+Math.cos(rad)*rr, y=cy+Math.sin(rad)*rr;
     const sel=(_editMode && i===_selPt);           // b400: highlight selected pt
     ctx.beginPath(); ctx.arc(x,y, sel?8:(_editMode?6:5), 0,Math.PI*2);
-    ctx.fillStyle = sel ? '#3fb6c6' : '#ff8c00';
-    ctx.shadowBlur = sel?16:10; ctx.shadowColor = sel?'#3fb6c6':'#ff8c00';
+    ctx.fillStyle = sel ? accentCol : markCol;
+    ctx.shadowBlur = sel?16:10; ctx.shadowColor = sel?accentCol:markCol;
     ctx.fill(); ctx.shadowBlur=0;
     // Point index number
-    ctx.fillStyle='#0d1613';
+    ctx.fillStyle=inkCol;
     ctx.font='bold 8px -apple-system,sans-serif';
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(i+1, x, y);
@@ -876,7 +903,7 @@ function draw(){
   ctx.fillStyle='#ffd700';
   ctx.shadowBlur=18; ctx.shadowColor='#ffd700'; ctx.fill(); ctx.shadowBlur=0;
   ctx.beginPath(); ctx.arc(cx,cy,2.5,0,Math.PI*2);
-  ctx.fillStyle='#0d1613'; ctx.fill();
+  ctx.fillStyle='#0e1014'; ctx.fill();
 }
 
 // ── State update ────────────────────────────────────────────────
