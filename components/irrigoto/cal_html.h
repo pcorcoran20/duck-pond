@@ -55,7 +55,7 @@ R"CALHTML(
 <link rel="stylesheet" media="print" onload="this.media='all'"
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap">
 <style>
-/* ---- Muscovy design system ------------------------------------------ */
+/* ---- Shared prelude: Hearth component language ---- */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 :root,:root[data-theme="dark"]{
   color-scheme:dark;
@@ -71,11 +71,13 @@ R"CALHTML(
   --radius:14px;--radius-sm:10px;
   --radar-bg:#0a0c0f;--radar-grid:#272c38;
   --shadow:0 1px 2px rgba(0,0,0,.25),0 10px 30px -18px rgba(0,0,0,.65);
-  /* Hearth's faces, then system fallbacks: the device serves these pages from
-     its own AP, which has no internet, so we never link Google Fonts. */
+  /* Hearth faces; system fallbacks on the device AP */
   --font:"Geist","Inter",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   --display:"Bricolage Grotesque","Geist",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --mono:"Geist Mono",ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  /* appended tokens; *-ink = text on a status tint */
+  --dot:#1c2028;--tint:rgba(236,238,243,.09);--tint-2:rgba(236,238,243,.16);--ok-ink:#2fc77a;--orange-ink:#ff9f40;--red-ink:#ff5a5a;
+  --scrim:rgba(8,10,14,.55);--knob:#ffffff;--shadow-float:0 30px 80px rgba(0,0,0,.35);--shadow-knob:0 1px 2px rgba(0,0,0,.2);
 }
 :root[data-theme="light"]{
   color-scheme:light;
@@ -90,82 +92,124 @@ R"CALHTML(
   --border:#e2e4ea;--btn:#ffffff;--btn-hover:#eef0f4;
   --radar-bg:#e9ebf0;--radar-grid:#c5cbd8;
   --shadow:0 1px 2px rgba(16,18,26,.05),0 10px 30px -18px rgba(16,18,26,.28);
+  /* appended tokens; light inks darkened for sunlight */
+  --dot:#d3d6de;--tint:rgba(21,23,28,.09);--tint-2:rgba(21,23,28,.16);--ok-ink:#146b43;--orange-ink:#8a4d0a;--red-ink:#a02828;
+  --scrim:rgba(8,10,14,.55);--knob:#ffffff;--shadow-float:0 30px 80px rgba(16,18,26,.25);--shadow-knob:0 1px 2px rgba(16,18,26,.12);
 }
 html,body{background:var(--bg);}
-body{color:var(--text);font:15px/1.45 var(--font);-webkit-font-smoothing:antialiased;}
+body{color:var(--text);font:14px/1.45 var(--font);-webkit-font-smoothing:antialiased;}
 button,input,select,textarea{font:inherit;color:inherit;}
 button{cursor:pointer;}
 a{color:var(--green);}
 :focus-visible{outline:2px solid var(--green);outline-offset:2px;}
 ::selection{background:var(--green-dim);}
+/* icons */
+svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none;}
 
-/* top bar, shared by every page */
-header{display:flex;align-items:center;gap:12px;padding:14px 18px 12px;
-  border-bottom:1px solid var(--border);background:var(--bg);flex-shrink:0;}
-.back{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;
-  border-radius:50%;border:1px solid var(--border);background:var(--bg2);color:var(--text);
-  text-decoration:none;font-size:18px;line-height:1;flex-shrink:0;}
-.back:active{background:var(--bg3);}
-.logo{display:inline-flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;font-size:17px;
-  letter-spacing:-.01em;color:var(--text);text-decoration:none;white-space:nowrap;}
-.logo .duck{flex-shrink:0;}
-.hdr-title,.header-mid{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--text-mid);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* top bar (.top) */
+header{display:flex;align-items:center;gap:10px;padding:8px 16px;min-height:56px;
+border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;min-width:0;}
+.back{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;flex-shrink:0;
+border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg2);color:var(--text-mid);text-decoration:none;}
+.back:active{background:var(--bg3);color:var(--text);}
+.logo{display:inline-flex;align-items:center;gap:10px;font-family:var(--display);font-weight:700;font-size:17px;
+letter-spacing:-.01em;color:var(--text);text-decoration:none;white-space:nowrap;}
+/* duck in the inverted .mark tile (own fills: brand exception) */
+.logo .duck{flex-shrink:0;width:28px;height:28px;padding:4px 3px;border-radius:9px;background:var(--text);}
+/* page identity: .name-in weight, not an eyebrow */
+.hdr-title,.header-mid{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:600;color:var(--text);}
+.sec-title{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mid);}
 .page-logo{display:none;}
-#conn,.usage{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-mid);margin-left:auto;white-space:nowrap;}
-.usage{font-size:11px;max-width:42%;overflow:hidden;text-overflow:ellipsis;display:block;}
-#conn-dot{width:8px;height:8px;border-radius:50%;background:var(--text-dim);transition:all .4s;flex-shrink:0;}
+/* .ha-chip; .usage = .stage-meta */
+#conn,.usage{display:inline-flex;align-items:center;gap:7px;margin-left:auto;padding:5px 11px;white-space:nowrap;
+font-size:12.5px;font-weight:500;color:var(--text-mid);border:1px solid var(--border);border-radius:99px;}
+.usage{font-size:11px;padding:0;border:0;max-width:50%;overflow:hidden;text-overflow:ellipsis;display:block;font-family:var(--mono);font-variant-numeric:tabular-nums;}
+#conn-dot{width:8px;height:8px;border-radius:50%;background:var(--text-dim);transition:background .4s,box-shadow .4s;flex-shrink:0;}
 #conn-dot.ok{background:var(--ok);box-shadow:0 0 0 3px var(--ok-dim);}
 #conn-dot.err{background:var(--red);box-shadow:0 0 0 3px var(--red-dim);}
+@media (max-width:400px){header{gap:6px;padding:8px 12px;}}
+@media (max-width:350px){#conn span{display:none;}#conn{padding:5px 7px;}}
 
-/* sections and cards */
-main{padding:18px 18px 28px;}
-section{margin-bottom:22px;}
-.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin:0 2px 10px;gap:10px;}
-.sec-title{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mid);}
-.sec-btn,#refresh-btn{font-size:13px;font-weight:600;color:var(--green);background:var(--bg2);
-  padding:6px 12px;border-radius:999px;cursor:pointer;border:1px solid var(--border);text-decoration:none;}
-.sec-btn:active,#refresh-btn:active{background:var(--green-dim);}
-.card,.status-card,.upload-card{background:var(--bg2);border:1px solid var(--border);
-  border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow);}
-.empty{color:var(--text-mid);font-size:14px;padding:6px 0;text-align:center;}
-.hint,.note,.cal-desc{font-size:13px;color:var(--text-mid);line-height:1.55;}
+/* page, groups, cards */
+main{padding:16px 16px 28px;display:flex;flex-direction:column;gap:16px;}
+section{display:flex;flex-direction:column;gap:10px;}
+/* .sec-hdr = .group rule; off on the first section (first-of-type: cal starts with a callout) */
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:36px;
+padding-top:16px;border-top:1px solid var(--border);}
+section:first-of-type > .sec-hdr,main > .sec-hdr:first-child,.card > .sec-hdr{padding-top:0;border-top:0;}
+/* header action = .mini at the 36px floor */
+.sec-btn,#refresh-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:6px 12px;
+border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg);color:var(--text-mid);
+font-size:12.5px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;}
+.sec-btn:active,#refresh-btn:active{color:var(--text);border-color:var(--text-mid);}
+.sec-btn svg.i,#refresh-btn svg.i{width:16px;height:16px;}
+.card,.status-card,.upload-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;}
+/* .insp-empty; quiet inside a card (fs: #tree.tree) */
+.empty,.card.empty{color:var(--text-mid);font-size:12.5px;line-height:1.45;text-align:center;padding:22px 12px;
+border:1.5px dashed var(--border);border-radius:16px;background:transparent;}
+.card > .empty,.card .tree > .empty{border:0;border-radius:0;padding:8px 0;}
+.hint,.note,.cal-desc{font-size:12.5px;color:var(--text-mid);line-height:1.5;margin:0;}
 .note,.cal-desc{margin-bottom:12px;}
+/* .score strip */
+.score{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--bg);border:1px solid var(--border);font-size:12.5px;line-height:1.45;}
+.score b{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+.kv{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.val{font-family:var(--mono);font-size:12px;color:var(--text-mid);font-variant-numeric:tabular-nums;}
+@keyframes pulse{50%{opacity:.25;transform:scale(.7);}}
 
-/* buttons */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 16px;
-  border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--btn);color:var(--text);
-  font-size:13.5px;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap;
-  transition:background .12s,transform .06s;}
-.btn:active{background:var(--btn-hover);transform:translateY(1px);}
-.btn:disabled{opacity:.45;cursor:default;transform:none;}
-.btn-primary,.btn-green{background:var(--green);border-color:var(--green);color:var(--accent-ink);}
-.btn-primary:active,.btn-green:active{filter:brightness(.92);background:var(--green);}
-.btn-danger,.btn-red{color:var(--red);border-color:var(--red);background:transparent;}
-.btn-danger:active,.btn-red:active{background:var(--red-dim);}
+/* .btn at touch density; danger = red text, never a red fill */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:10px 14px;
+border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--btn);color:var(--text);
+font-size:13px;font-weight:500;line-height:20px;cursor:pointer;text-decoration:none;white-space:nowrap;
+transition:border-color .15s,background .15s;}
+.btn:active{background:var(--btn-hover);border-color:var(--text-mid);}
+.btn:disabled{opacity:.45;cursor:default;}
+.btn-primary,.btn-green{background:var(--green);border-color:transparent;color:var(--accent-ink);}
+.btn-primary:active,.btn-green:active{background:var(--green);border-color:transparent;filter:brightness(.94);}
+.btn-danger,.btn-red{color:var(--red);}
+.btn.icon{width:40px;min-height:40px;padding:0;}
+.btn.sm{min-height:36px;padding:6px 12px;}
+/* hover (laptops only) */
+@media (hover:hover){
+.btn:hover:not(:disabled),.sec-btn:hover,#refresh-btn:hover,.act-btn:hover,.entry-del:hover{border-color:var(--text-mid);}
+.btn-primary:hover:not(:disabled),.btn-green:hover:not(:disabled){filter:brightness(1.06);}
+}
 
-/* fields */
+/* fields: recessed, accent focus border (range/checkbox keep the ring) */
 input[type=text],input[type=number],input[type=time],select,.throw-inp,.path-inp,.file-inp{
-  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
-  color:var(--text);font-size:15px;padding:10px 12px;width:100%;}
-input:focus,select:focus{outline:2px solid var(--green);outline-offset:-1px;border-color:transparent;}
+background:var(--bg);border:1px solid var(--border);border-radius:9px;
+color:var(--text);font-size:15px;padding:10px 12px;min-height:42px;width:100%;}
+input:not([type=range]):not([type=checkbox]):focus,select:focus{outline:none;border-color:var(--green);}
 input::placeholder{color:var(--text-dim);}
+input[type=range]{accent-color:var(--green);width:100%;height:36px;}
+.field{display:flex;flex-direction:column;gap:6px;}
+.field label{font-size:12.5px;font-weight:500;}
+/* .name-in: border on hover; resting border on touch */
+input.name-in,.name-in{background:transparent;border:1px solid transparent;border-radius:8px;padding:6px 8px;min-height:0;min-width:0;font-weight:500;color:var(--text);}
+input.name-in:hover{border-color:var(--border);}
+input.name-in:focus{border-color:var(--green);outline:none;}
+@media (hover:none){input.name-in{border-color:var(--border);}}
 
-/* toggle switch */
-.theme-switch{position:relative;display:inline-block;width:46px;height:26px;vertical-align:middle;flex-shrink:0;}
-.theme-switch input{opacity:0;width:0;height:0;}
-.theme-slider{position:absolute;cursor:pointer;inset:0;background:var(--bg3);transition:.25s;
-  border-radius:26px;border:1px solid var(--border);}
-.theme-slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;top:3px;
-  background:var(--text-mid);transition:.25s;border-radius:50%;}
-.theme-switch input:checked + .theme-slider{background:var(--green);border-color:var(--green);}
-.theme-switch input:checked + .theme-slider:before{transform:translateX(20px);background:#fff;}
+/* .switch 44x26; knob on .theme-slider:before; label :before pads the hit box to 56x44 */
+.theme-switch{position:relative;display:inline-block;width:44px;height:26px;vertical-align:middle;flex-shrink:0;cursor:pointer;}
+.theme-switch:before{content:"";position:absolute;inset:-9px -6px;}
+.theme-switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer;}
+.theme-slider{position:absolute;inset:0;border-radius:99px;background:var(--border);transition:background .2s;pointer-events:none;}
+.theme-slider:before{position:absolute;content:"";width:20px;height:20px;left:3px;top:3px;border-radius:50%;
+background:var(--knob);box-shadow:var(--shadow-knob);transition:transform .2s;}
+.theme-switch input:checked + .theme-slider{background:var(--green);}
+.theme-switch input:checked + .theme-slider:before{transform:translateX(18px);}
+.theme-switch input:focus-visible + .theme-slider{outline:2px solid var(--green);outline-offset:2px;}
 
-/* banners (landing winter / cal-incomplete) */
-.banner{margin:12px 18px 0;padding:12px 14px;border-radius:var(--radius-sm);font-size:14px;
-  font-weight:600;text-align:center;border:1px solid;}
-.banner-info{color:var(--green);border-color:var(--green);background:var(--green-dim);}
-.banner-warn{color:var(--red);border-color:var(--red);background:var(--red-dim);}
+/* .rep rows: panel fill, tint only on the 22px icon */
+.banner{margin:12px 16px 0;padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border);
+background:var(--bg2);font-size:13px;font-weight:500;line-height:1.45;color:var(--text);}
+.banner-row{display:flex;gap:10px;align-items:flex-start;}
+.banner-i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--green-dim);color:var(--green);}
+.banner-i svg.i{width:14px;height:14px;}
+.banner-body{flex:1;min-width:0;}
+.banner-info .banner-i{background:var(--green-dim);color:var(--green);}
+.banner-warn .banner-i{background:var(--orange-dim);color:var(--orange-ink);}
 .banner .btn{margin-top:10px;}
 
 /* winter lock (b535) */
@@ -173,46 +217,56 @@ body.winter-lock{pointer-events:none;}
 body.winter-lock #winter-banner{pointer-events:auto;}
 body.winter-lock button:not(#winter-banner button),body.winter-lock input,
 body.winter-lock select,body.winter-lock a{opacity:.45;}
+/* don't double-dim icons the head script already dimmed */
+body.winter-lock button svg.i,body.winter-lock a svg.i{opacity:1;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
 
 body{max-width:560px;margin:0 auto;padding-bottom:24px;}
-.prog-wrap{background:var(--bg3);border-radius:4px;height:8px;margin:12px 0;overflow:hidden;}
-.prog-fill{height:100%;border-radius:4px;background:var(--green);transition:width .4s;}
-.status-msg{font-size:13px;color:var(--text-mid);min-height:18px;margin:6px 0;}
+.callout{align-items:flex-start;}
+.callout svg.i{color:var(--green);margin-top:1px;}
+.callout b{font-family:inherit;}  /* .score b is mono for numbers; "Pressure -> Throw" is prose */
 .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px;}
-th{color:var(--text-mid);font-weight:700;text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);
-  font-size:11px;letter-spacing:.08em;text-transform:uppercase;}
-td{padding:7px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);color:var(--text);}
+/* progress (Hearth .posbar): tint track, accent fill, width-driven by JS */
+.prog-wrap{background:var(--tint-2);border-radius:6px;height:6px;margin:12px 0;overflow:hidden;}
+.prog-fill{height:100%;background:var(--green);transition:width .4s;}
+.status-msg{font-size:12.5px;color:var(--text-mid);min-height:1.4em;margin:6px 0;font-variant-numeric:tabular-nums;}
+/* results table: eyebrow heads, mono tabular cells, # column muted */
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px;}
+th{color:var(--text-mid);font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);font-size:11px;letter-spacing:.08em;text-transform:uppercase;}
+td{padding:8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--text);font-variant-numeric:tabular-nums;}
+td:first-child{color:var(--text-mid);}
 tr:last-child td{border-bottom:none;}
-.bar-wrap{background:var(--bg3);border-radius:3px;height:6px;width:80px;}
-.bar-fill{height:100%;border-radius:3px;background:var(--green);}
-.throw-input-block{display:none;margin-top:14px;padding:14px;background:var(--orange-dim);border-radius:var(--radius-sm);border:1px solid var(--orange);}
+.bar-wrap{background:var(--tint-2);border-radius:6px;height:6px;width:80px;overflow:hidden;}
+.bar-fill{height:100%;background:var(--green);transition:width .4s;}
+/* throw steps: recessed sub-panel with a 22px tinted step badge (Hearth .rep-i) */
+.throw-input-block{display:none;margin-top:14px;padding:14px;background:var(--bg);border:1px solid var(--border);border-radius:12px;}
 .throw-input-block.show{display:block;}
-.throw-label{font-size:14px;color:var(--text);margin-bottom:10px;line-height:1.5;}
+.throw-label{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--text);margin-bottom:10px;line-height:1.5;}
+.step-i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--orange-dim);color:var(--orange-ink);}
+.step-i svg.i{width:14px;height:14px;}
 .throw-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
-.throw-inp{flex:1;min-width:140px;background:var(--bg2);font-size:16px;font-family:var(--mono);}
-.enc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.enc-box{background:var(--bg2);border-radius:var(--radius);padding:14px;border:1px solid var(--border);box-shadow:var(--shadow);}
-.enc-name{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--text-mid);margin-bottom:6px;}
-.enc-val{font-size:24px;font-weight:800;font-family:var(--mono);color:var(--text);letter-spacing:-.02em;}
-.enc-sub{font-size:12px;color:var(--text-mid);margin-top:4px;}
-.enc-ok{color:var(--green);} .enc-warn{color:var(--orange);}
-.spd-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;}
-.spd-row:last-child{border-bottom:none;}
-.spd-label{color:var(--text-mid);}
-.spd-val{font-family:var(--mono);}
+.throw-inp{flex:1;min-width:140px;background:var(--bg2);font-size:15px;font-family:var(--mono);}
+/* encoder tiles: eyebrow + display-face numeral + floated verdict pill (JS assigns className enc-ok / enc-warn / '') */
+.enc-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.enc-box{background:var(--bg2);border-radius:12px;padding:12px;border:1px solid var(--border);}
+.enc-name{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mid);margin-bottom:6px;}
+.enc-val{font-family:var(--display);font-size:26px;font-weight:600;letter-spacing:-.03em;line-height:1;color:var(--text);font-variant-numeric:tabular-nums;}
+.enc-sub{font-size:12px;color:var(--text-mid);margin-top:8px;line-height:20px;font-variant-numeric:tabular-nums;}
+.enc-ok,.enc-warn{float:right;font-size:11px;font-weight:700;line-height:16px;padding:2px 7px;border-radius:99px;}
+.enc-ok{background:var(--ok-dim);color:var(--ok-ink);}
+.enc-warn{background:var(--orange-dim);color:var(--orange-ink);}
 </style>
 </head>
 <body>
+<svg aria-hidden="true" width="0" height="0" style="position:absolute"><symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol><symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol><symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></symbol><symbol id="i-square" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/></symbol><symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol><symbol id="i-droplet" viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></symbol><symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16v4M17 18h4"/></symbol><symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></symbol></svg>
 <header>
-  <a class="back" href="/" title="Back">&larr;</a>
+  <a class="back" href="/" title="Back"><svg class="i"><use href="#i-chevron-left"/></svg></a>
   <a class="logo" href="/"><svg class="duck" width="26" height="22" viewBox="0 0 30 26" aria-hidden="true"><path d="M3 18c1-6 5-9 10-9 3 0 5 1 7 3l6-1-3 4c0 5-5 9-11 9S3 22 3 18z" fill="var(--pond)"/><circle cx="21.5" cy="12.5" r="3.6" fill="var(--pond)"/><path d="M24.5 12.5l4 1-3.5 1.5z" fill="var(--red)"/><circle cx="22" cy="12" r=".9" fill="var(--bg2)"/></svg>Irrigoto</a>
   <span class="hdr-title">Calibration</span>
 </header>
 <main>
 
-<div class="note card" style="margin:0 0 16px">Run <b>Pressure &rarr; Throw</b> first &mdash; complete it before speed cal, jog cal, or zone creation. The other calibrations use its pressure map to open the valve; until it completes they run with the valve closed (dry).</div>
+<div class="score callout"><svg class="i"><use href="#i-info"/></svg><span>Run <b>Pressure &rarr; Throw</b> first &mdash; complete it before speed cal, jog cal, or zone creation. The other calibrations use its pressure map to open the valve; until it completes they run with the valve closed (dry).</span></div>
 
 <!-- Pressure calibration -->
 <section id="pressure">
@@ -220,9 +274,9 @@ tr:last-child td{border-bottom:none;}
   <div class="card">
     <div class="note">Sweeps the valve open&rarr;closed, reads pressure at each step, then averages opening and closing readings to remove hysteresis. Water supply must be connected and pressurised. Allow several minutes for the sweep, plus the throw-distance measurement steps.</div>
     <div class="btn-row">
-      <button class="btn btn-green" id="pres-start-btn" onclick="presStart()">&#9654; Run scan</button>
-      <button class="btn btn-red" id="pres-cancel-btn" style="display:none" onclick="presCancel()">&#9632; Cancel</button>
-      <button class="btn btn-red" id="pres-clear-btn" onclick="presClear()">&#10005; Clear cal</button>
+      <button class="btn" id="pres-start-btn" onclick="presStart()"><svg class="i"><use href="#i-play"/></svg>Run scan</button>
+      <button class="btn btn-red" id="pres-cancel-btn" style="display:none" onclick="presCancel()"><svg class="i"><use href="#i-square"/></svg>Cancel</button>
+      <button class="btn btn-red" id="pres-clear-btn" onclick="presClear()"><svg class="i"><use href="#i-x"/></svg>Clear cal</button>
     </div>
     <div class="prog-wrap" id="pres-prog-wrap" style="display:none">
       <div class="prog-fill" id="pres-prog" style="width:0%"></div>
@@ -230,7 +284,7 @@ tr:last-child td{border-bottom:none;}
     <div class="status-msg" id="pres-msg"></div>
     <!-- Low throw entry (shown after scan, step 1 of 2) -->
     <div class="throw-input-block" id="throw-low-block">
-      <div class="throw-label">&#128167; Step 1 of 2: Valve is open a little (short throw). Go measure the distance to the outer edge of this short spray ellipse, then enter it below.</div>
+      <div class="throw-label"><span class="step-i"><svg class="i"><use href="#i-droplet"/></svg></span><span>Step 1 of 2: Valve is open a little (short throw). Go measure the distance to the outer edge of this short spray ellipse, then enter it below.</span></div>
       <div class="throw-row">
         <input class="throw-inp" id="throw-low-inp" type="text" placeholder="e.g. 1200 or 4.0f" inputmode="decimal">
         <button class="btn btn-green" id="throw-low-save-btn" onclick="submitThrowLow()">Save short throw</button>
@@ -239,7 +293,7 @@ tr:last-child td{border-bottom:none;}
     </div>
     <!-- Max throw entry (shown after low throw, step 2 of 2) -->
     <div class="throw-input-block" id="throw-block">
-      <div class="throw-label">&#127775; Step 2 of 2: Valve is now open at full pressure. Go measure the distance to the outer edge of the spray ellipse, then enter it below.</div>
+      <div class="throw-label"><span class="step-i"><svg class="i"><use href="#i-sparkle"/></svg></span><span>Step 2 of 2: Valve is now open at full pressure. Go measure the distance to the outer edge of the spray ellipse, then enter it below.</span></div>
       <div class="throw-row">
         <input class="throw-inp" id="throw-inp" type="text" placeholder="e.g. 6200 or 20.3f" inputmode="decimal">
         <button class="btn btn-green" id="throw-save-btn" onclick="submitThrow()">Save max throw</button>
@@ -262,7 +316,7 @@ tr:last-child td{border-bottom:none;}
   <div class="card">
     <div class="note">Runs the nozzle at each PWM duty level and measures deg/sec from the encoder. CW then CCW. Takes ~4 minutes. With a completed pressure cal (and water connected) the valve opens to ~30% pressure; without one it runs dry with the valve closed.</div>
     <div class="btn-row">
-      <button class="btn btn-green" id="noz-start-btn" onclick="nozStart()">&#9654; Run speed cal</button>
+      <button class="btn" id="noz-start-btn" onclick="nozStart()"><svg class="i"><use href="#i-play"/></svg>Run speed cal</button>
     </div>
     <div class="prog-wrap" id="noz-prog-wrap" style="display:none">
       <div class="prog-fill" id="noz-prog" style="width:0%"></div>
@@ -278,8 +332,8 @@ tr:last-child td{border-bottom:none;}
   <div class="card">
     <div class="note">Measures how far the nozzle moves per PWM pulse under water load. Run AFTER nozzle speed cal. With a completed pressure cal (and water connected) the valve opens to ~30% pressure; without one it runs dry with the valve closed.</div>
     <div class="btn-row">
-      <button class="btn btn-green" id="jog-start-btn" onclick="jogStart()">&#9654; Run jog cal</button>
-      <button class="btn btn-red" id="jog-cancel-btn" style="display:none" onclick="jogCancel()">&#9632; Cancel</button>
+      <button class="btn" id="jog-start-btn" onclick="jogStart()"><svg class="i"><use href="#i-play"/></svg>Run jog cal</button>
+      <button class="btn btn-red" id="jog-cancel-btn" style="display:none" onclick="jogCancel()"><svg class="i"><use href="#i-square"/></svg>Cancel</button>
     </div>
     <div class="prog-wrap" id="jog-prog-wrap" style="display:none">
       <div class="prog-fill" id="jog-prog" style="width:0%"></div>
@@ -292,7 +346,7 @@ tr:last-child td{border-bottom:none;}
 <section>
   <div class="sec-hdr">
     <span class="sec-title">Encoder Health</span>
-    <button class="btn" style="font-size:12px;padding:4px 10px" onclick="loadEncoder()">&#8635; Refresh</button>
+    <button class="btn sm" onclick="loadEncoder()"><svg class="i"><use href="#i-refresh"/></svg>Refresh</button>
   </div>
   <div class="enc-grid">
     <div class="enc-box">
