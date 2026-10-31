@@ -1,0 +1,104 @@
+# irrigoto spot watering — drop into config/packages/ next to irrigoto_43c89c_manual.yaml
+# Needs input_text.oto_ip from that package.
+#
+# Each spot: where the stream should LAND, how long to soak, and how wide a ring to draw.
+# Get bearing/throw by aiming with the duck remote (or Zone Setup's readout) at the trunk.
+
+rest_command:
+  oto_nozzle_goto:
+    # rotate the nozzle with the valve CLOSED — the dry move between trees
+    url: "http://{{ states('input_text.oto_ip') }}/nozzle/goto?deg={{ bearing }}"
+    method: GET
+    timeout: 20
+  oto_water_arc:
+    # sweep bearing start→end at one throw; leaves the valve OPEN at the end
+    url: >-
+      http://{{ states('input_text.oto_ip') }}/water/arc?throw={{ throw_mm }}&start={{ start }}&end={{ end }}&speed={{ speed }}&dir={{ dir }}
+    method: GET
+    timeout: 120
+
+script:
+  oto_water_spots:
+    alias: "OtO: water spots (trees)"
+    description: Soak each spot in turn. Nozzle travels dry between spots.
+    mode: single
+    fields:
+      only:
+        description: Optional — water just this spot name (e.g. "Mango")
+        example: Mango
+    variables:
+      # ---- EDIT ME ----
+      spots:
+        - { name: "Mango",   bearing: 118, throw_ft: 14.0, seconds: 90, wiggle_deg: 6 }
+        - { name: "Avocado", bearing: 164, throw_ft: 19.5, seconds: 90, wiggle_deg: 6 }
+        - { name: "Lychee",  bearing: 231, throw_ft:  9.0, seconds: 60, wiggle_deg: 4 }
+      # wiggle_deg 0 = hold still; 4–8 = draw a ring around the trunk
+      # ------------------
+      wanted: "{{ spots if only is not defined or only == '' else (spots | selectattr('name','eq', only) | list) }}"
+    sequence:
+      - action: rest_command.oto_water_cancel
+      - action: rest_command.oto_valve_close
+      - repeat:
+          for_each: "{{ wanted }}"
+          sequence:
+            - variables:
+                mm: "{{ (repeat.item.throw_ft | float * 304.8) | round(0) | int }}"
+                half: "{{ (repeat.item.wiggle_deg | float / 2) }}"
+                start: "{{ ((repeat.item.bearing | float - half) % 360) | round(1) }}"
+                end: "{{ ((repeat.item.bearing | float + half) % 360) | round(1) }}"
+                # one pass across the wiggle at ~3°/s; firmware clamps speed to 1..25
+                pass_s: "{{ [ (repeat.item.wiggle_deg | float / 3.0), 1.0 ] | max }}"
+                passes: "{{ ([ (repeat.item.seconds | float / pass_s), 1 ] | max) | round(0) | int }}"
+            - action: persistent_notification.create
+              data:
+                notification_id: oto_spots
+                title: "OtO spot watering"
+                message: "Watering {{ repeat.item.name }} — {{ repeat.item.seconds }} s at {{ repeat.item.throw_ft }} ft"
+            # 1. dry rotate to the tree
+            - action: rest_command.oto_nozzle_goto
+              data: { bearing: "{{ start }}" }
+            # 2. open at the tree's distance (nozzle already there, so nothing in between gets wet)
+            - action: rest_command.oto_aim_throw
+              data: { bearing: "{{ start }}", throw_mm: "{{ mm }}" }
+            # 3. soak: hold still, or wiggle back and forth to wet a ring
+            - choose:
+                - conditions: "{{ repeat.item.wiggle_deg | float <= 0 }}"
+                  sequence:
+                    - delay: { seconds: "{{ repeat.item.seconds | int }}" }
+              default:
+                - repeat:
+                    count: "{{ passes }}"
+                    sequence:
+                      - action: rest_command.oto_water_arc
+                        data:
+                          throw_mm: "{{ mm }}"
+                          start: "{{ start if repeat.index is odd else end }}"
+                          end:   "{{ end if repeat.index is odd else start }}"
+                          speed: 3
+                          dir: "{{ 'cw' if repeat.index is odd else 'ccw' }}"
+            # 4. close before moving on
+            - action: rest_command.oto_valve_close
+      - action: esphome.irrigoto_43c89c_stop
+      - action: persistent_notification.dismiss
+        data: { notification_id: oto_spots }
+
+  oto_water_one_spot:
+    alias: "OtO: water one spot"
+    fields:
+      name: { description: "Spot name from the list", example: Mango }
+    sequence:
+      - action: script.oto_water_spots
+        data: { only: "{{ name }}" }
+
+automation:
+  - alias: "OtO: trees every other morning"
+    id: oto_trees_schedule
+    initial_state: false        # flip on in the UI once the battery situation is sorted
+    triggers:
+      - trigger: time
+        at: "06:45:00"
+    conditions:
+      - condition: template
+        value_template: "{{ now().timetuple().tm_yday % 2 == 0 }}"
+    actions:
+      - action: script.oto_water_spots

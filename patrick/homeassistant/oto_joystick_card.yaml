@@ -1,0 +1,47 @@
+# Paste as a Manual card on any dashboard (Edit dashboard -> Add card -> Manual)
+type: vertical-stack
+cards:
+  - type: entities
+    title: OtO manual
+    entities:
+      - entity: binary_sensor.irrigoto_43c89c_irrigoto_watering
+        name: Watering
+      - entity: sensor.irrigoto_43c89c_irrigoto_pressure
+        name: Pressure
+      - entity: sensor.irrigoto_43c89c_irrigoto_throw_distance
+        name: Throw (live)
+      - entity: input_number.oto_bearing
+      - entity: input_number.oto_throw_ft
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: ON
+        icon: mdi:water
+        tap_action: { action: perform-action, perform_action: script.oto_on }
+      - type: button
+        name: OFF
+        icon: mdi:water-off
+        tap_action: { action: perform-action, perform_action: script.oto_off }
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Left
+        icon: mdi:rotate-left
+        tap_action: { action: perform-action, perform_action: script.oto_left }
+      - type: button
+        name: Further
+        icon: mdi:arrow-up-bold
+        tap_action: { action: perform-action, perform_action: script.oto_up }
+      - type: button
+        name: Closer
+        icon: mdi:arrow-down-bold
+        tap_action: { action: perform-action, perform_action: script.oto_down }
+      - type: button
+        name: Right
+        icon: mdi:rotate-right
+        tap_action: { action: perform-action, perform_action: script.oto_right }
+  - type: entities
+    entities:
+      - entity: input_number.oto_step_deg
+      - entity: input_number.oto_step_ft
+      - entity: input_text.oto_ip

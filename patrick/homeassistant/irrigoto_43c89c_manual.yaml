@@ -1,0 +1,130 @@
+# irrigoto manual control — drop into config/packages/
+# Device: irrigoto-43c89c
+# Give the OtO a DHCP reservation in UniFi, then set input_text.oto_ip once.
+
+input_text:
+  oto_ip:
+    name: OtO IP
+    initial: "192.168.1.50"   # <- change to your reservation
+
+input_number:
+  oto_bearing:
+    name: OtO Bearing
+    min: 0
+    max: 359
+    step: 1
+    unit_of_measurement: "°"
+    icon: mdi:compass
+  oto_throw_ft:
+    name: OtO Throw
+    min: 2
+    max: 40
+    step: 1
+    unit_of_measurement: ft
+    icon: mdi:arrow-expand-horizontal
+  oto_step_deg:
+    name: OtO Bearing Step
+    min: 1
+    max: 45
+    step: 1
+    unit_of_measurement: "°"
+    initial: 10
+  oto_step_ft:
+    name: OtO Throw Step
+    min: 1
+    max: 10
+    step: 1
+    unit_of_measurement: ft
+    initial: 2
+
+rest_command:
+  oto_aim_throw:
+    url: "http://{{ states('input_text.oto_ip') }}/aim/throw?bearing={{ bearing }}&throw={{ throw_mm }}"
+    method: GET
+    timeout: 15
+  oto_valve_open:
+    url: "http://{{ states('input_text.oto_ip') }}/valve/open"
+    method: POST
+  oto_valve_close:
+    url: "http://{{ states('input_text.oto_ip') }}/valve/close"
+    method: POST
+  oto_water_zone:
+    url: "http://{{ states('input_text.oto_ip') }}/zone/water"
+    method: POST
+    content_type: "application/x-www-form-urlencoded"
+    payload: "id={{ zone_id }}&mode={{ mode | default('smooth') }}{% if duration is defined %}&duration={{ duration }}{% endif %}"
+  oto_water_cancel:
+    url: "http://{{ states('input_text.oto_ip') }}/zone/water/cancel"
+    method: POST
+
+script:
+  # Point the nozzle at the current bearing/throw and open the valve to match.
+  oto_aim:
+    alias: "OtO: aim (water at bearing/throw)"
+    mode: queued
+    sequence:
+      - action: rest_command.oto_aim_throw
+        data:
+          bearing: "{{ states('input_number.oto_bearing') | int }}"
+          throw_mm: "{{ (states('input_number.oto_throw_ft') | float * 304.8) | round(0) }}"
+
+  oto_on:
+    alias: "OtO: ON"
+    sequence:
+      - action: script.oto_aim
+
+  oto_off:
+    alias: "OtO: OFF (stop + close valve)"
+    sequence:
+      - action: rest_command.oto_water_cancel
+      - action: esphome.irrigoto_43c89c_stop   # stop_and_close, via the ESPHome API
+
+  oto_up:
+    alias: "OtO: throw further"
+    sequence:
+      - action: input_number.set_value
+        target: { entity_id: input_number.oto_throw_ft }
+        data:
+          value: >-
+            {{ [states('input_number.oto_throw_ft') | float + states('input_number.oto_step_ft') | float, 40] | min }}
+      - action: script.oto_aim
+
+  oto_down:
+    alias: "OtO: throw closer"
+    sequence:
+      - action: input_number.set_value
+        target: { entity_id: input_number.oto_throw_ft }
+        data:
+          value: >-
+            {{ [states('input_number.oto_throw_ft') | float - states('input_number.oto_step_ft') | float, 2] | max }}
+      - action: script.oto_aim
+
+  oto_left:
+    alias: "OtO: rotate left"
+    sequence:
+      - action: input_number.set_value
+        target: { entity_id: input_number.oto_bearing }
+        data:
+          value: "{{ (states('input_number.oto_bearing') | int - states('input_number.oto_step_deg') | int) % 360 }}"
+      - action: script.oto_aim
+
+  oto_right:
+    alias: "OtO: rotate right"
+    sequence:
+      - action: input_number.set_value
+        target: { entity_id: input_number.oto_bearing }
+        data:
+          value: "{{ (states('input_number.oto_bearing') | int + states('input_number.oto_step_deg') | int) % 360 }}"
+      - action: script.oto_aim
+
+  # Hands-free: run a saved zone from the OtO's own zone list.
+  oto_water_zone:
+    alias: "OtO: water zone"
+    fields:
+      zone_id: { description: "Zone id from /api/zones", example: 0 }
+      mode:    { description: "smooth | pulse | gentle | chase", example: smooth }
+    sequence:
+      - action: rest_command.oto_water_zone
+        data:
+          zone_id: "{{ zone_id }}"
+          mode: "{{ mode | default('smooth') }}"

@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duck pond remote</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%A6%86%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light dark;
+    --sky: #f3efe4;      /* page: cream feather */
+    --dew: #fffdf6;      /* panels: white plumage */
+    --moss: #15241d;     /* text: muscovy black-green */
+    --fern: #5e6b5a;     /* muted: wet-down grey-green */
+    --water: #2a7f8f;    /* target: pond water */
+    --spray: #9fd6d2;    /* throw fill: splash */
+    --soil: #d9d2bf;     /* rules: dry straw */
+    --warn: #c43a2f;     /* stop: caruncle red */
+    --pond: #2f5a45;     /* iridescent green accent */
+    --font: "Figtree", "Avenir Next", "Segoe UI Variable", "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --sky: #0d1613; --dew: #15231d; --moss: #f1ecdc; --fern: #9aa893;
+      --water: #5fc8d6; --spray: #1d4a50; --soil: #2a3a31; --warn: #ff6a57; --pond: #4f8f6e;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--sky); color: var(--moss); font: 16px/1.45 var(--font); }
+  body { min-height: 100dvh; display: grid; grid-template-rows: auto 1fr auto; }
+  header { display: flex; align-items: baseline; gap: 1rem; padding: 1rem 1.25rem 0; flex-wrap: wrap; }
+  header h1 { font-size: 1.25rem; font-weight: 800; margin: 0; letter-spacing: -0.01em; }
+  header .conn { color: var(--fern); font-size: 0.95rem; }
+  header .conn.ok { color: var(--water); }
+  header .conn.bad { color: var(--warn); }
+  main { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 340px); gap: 1.25rem; padding: 1rem 1.25rem 1.25rem; align-items: start; }
+  @media (max-width: 720px) { main { grid-template-columns: 1fr; } }
+
+  /* the dial */
+  .dial { position: relative; aspect-ratio: 1; max-width: 560px; margin: 0 auto; width: 100%; }
+  .dial svg { width: 100%; height: 100%; display: block; }
+  .dial:focus { outline: none; }
+  .dial:focus-visible .rim { stroke: var(--water); stroke-width: 3; }
+  .readout { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
+  .readout .big { font-size: clamp(2.4rem, 9vw, 4.2rem); font-weight: 800; line-height: 1; letter-spacing: -0.03em; }
+  .readout .big span { font-size: 0.5em; font-weight: 600; color: var(--fern); margin-left: 0.1em; }
+  .readout .sub { color: var(--fern); margin-top: 0.4rem; }
+  .readout .sub.moving { color: var(--water); }
+  .readout .sub.open { color: var(--water); font-weight: 600; }
+
+  /* side panel */
+  aside { display: grid; gap: 1rem; }
+  .panel { background: var(--dew); border: 1px solid var(--soil); border-radius: 14px; padding: 1rem; }
+  .panel h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.6rem; color: var(--fern); }
+  label { display: grid; gap: 0.25rem; font-size: 0.9rem; color: var(--fern); }
+  input[type=text], input[type=number] { font: inherit; color: var(--moss); background: var(--sky); border: 1px solid var(--soil); border-radius: 8px; padding: 0.45rem 0.6rem; width: 100%; }
+  input:focus-visible { outline: 2px solid var(--water); outline-offset: 1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 0.6rem; }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 0.8rem; align-items: center; font-size: 0.95rem; }
+  kbd { font: 600 0.8rem/1 var(--font); background: var(--sky); border: 1px solid var(--soil); border-bottom-width: 2px; border-radius: 6px; padding: 0.3rem 0.45rem; white-space: nowrap; color: var(--moss); }
+  .stop { width: 100%; font: 800 1.1rem var(--font); color: #fff; background: var(--warn); border: 0; border-radius: 12px; padding: 0.9rem; cursor: pointer; }
+  .stop:focus-visible { outline: 3px solid var(--moss); outline-offset: 2px; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 0.6rem; }
+  .btns button { font: 600 0.95rem var(--font); color: var(--moss); background: var(--sky); border: 1px solid var(--soil); border-radius: 10px; padding: 0.6rem; cursor: pointer; }
+  .btns button:focus-visible { outline: 2px solid var(--water); }
+  .log { font-size: 0.85rem; color: var(--fern); max-height: 9rem; overflow: auto; margin: 0; padding: 0; list-style: none; }
+  .log li { padding: 0.15rem 0; border-top: 1px solid var(--soil); }
+  .log li.err { color: var(--warn); }
+  footer { padding: 0 1.25rem 1rem; color: var(--fern); font-size: 0.85rem; }
+  @media (prefers-reduced-motion: no-preference) {
+    .needle, .ring { transition: transform 180ms ease-out, r 180ms ease-out; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><svg width="30" height="26" viewBox="0 0 30 26" aria-hidden="true" style="vertical-align:-5px;margin-right:.35rem"><path d="M3 18c1-6 5-9 10-9 3 0 5 1 7 3l6-1-3 4c0 5-5 9-11 9S3 22 3 18z" fill="var(--pond)"/><circle cx="21.5" cy="12.5" r="3.6" fill="var(--pond)"/><path d="M24.5 12.5l4 1-3.5 1.5z" fill="var(--warn)"/><circle cx="22" cy="12" r=".9" fill="var(--sky)"/></svg>Duck pond remote</h1>
+  <div class="conn" id="conn">Set the sprinkler’s IP to start</div>
+</header>
+
+<main>
+  <div class="dial" id="dial" tabindex="0" aria-label="Aim dial. Arrow keys change bearing and throw.">
+    <svg viewBox="0 0 400 400" aria-hidden="true">
+      <defs>
+        <radialGradient id="sprayg" cx="50%" cy="50%" r="50%">
+          <stop offset="0" stop-color="var(--spray)" stop-opacity="0.15"/>
+          <stop offset="1" stop-color="var(--spray)" stop-opacity="0.55"/>
+        </radialGradient>
+      </defs>
+      <circle class="rim" cx="200" cy="200" r="186" fill="var(--dew)" stroke="var(--soil)" stroke-width="2"/>
+      <g id="ticks" stroke="var(--soil)"></g>
+      <!-- throw ring: radius scales with target throw -->
+      <circle class="ring" id="ring" cx="200" cy="200" r="90" fill="url(#sprayg)" stroke="var(--water)" stroke-width="1.5" style="transform-origin:200px 200px"/>
+      <!-- last confirmed position (ghost) -->
+      <g id="ghost" style="transform-origin:200px 200px; opacity:0.35">
+        <line x1="200" y1="200" x2="200" y2="30" stroke="var(--fern)" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 7"/>
+      </g>
+      <!-- target needle -->
+      <g class="needle" id="needle" style="transform-origin:200px 200px">
+        <line x1="200" y1="200" x2="200" y2="26" stroke="var(--water)" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="200" cy="26" r="7" fill="var(--water)"/>
+      </g>
+      <circle cx="200" cy="200" r="9" fill="var(--pond)"/>
+    </svg>
+    <div class="readout">
+      <div class="big" id="bearingOut">0<span>°</span></div>
+      <div class="big" id="throwOut" style="font-size:clamp(1.6rem,6vw,2.6rem)">10<span>ft</span></div>
+      <div class="sub" id="stateOut">valve closed</div>
+    </div>
+  </div>
+
+  <aside>
+    <button class="stop" id="stopBtn">Stop — duck in the way</button>
+
+    <div class="panel">
+      <h2>Keys</h2>
+      <div class="keys">
+        <kbd>← →</kbd><span>rotate by <b id="kDeg">10</b>°</span>
+        <kbd>↑ ↓</kbd><span>throw by <b id="kFt">2</b> ft</span>
+        <kbd>Shift + arrows</kbd><span>fine: 1° / 0.5 ft</span>
+        <kbd>Space</kbd><span>blast at target / stop blasting</span>
+        <kbd>Enter</kbd><span>re‑aim now</span>
+        <kbd>Esc</kbd><span>stop — duck in the way</span>
+      </div>
+      <div class="btns">
+        <button id="aimBtn">Blast at target</button>
+        <button id="closeBtn">Stop blasting</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Settings</h2>
+      <label>OtO IP address <input type="text" id="ip" placeholder="192.168.1.50" spellcheck="false" autocomplete="off"></label>
+      <div class="row">
+        <label>Bearing step (°) <input type="number" id="stepDeg" min="1" max="45" step="1" value="10"></label>
+        <label>Throw step (ft) <input type="number" id="stepFt" min="0.5" max="10" step="0.5" value="2"></label>
+      </div>
+      <div class="row">
+        <label>Min throw (ft) <input type="number" id="minFt" min="1" max="20" step="0.5" value="4"></label>
+        <label>Max throw (ft) <input type="number" id="maxFt" min="5" max="49" step="0.5" value="30"></label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Pond log</h2>
+      <ul class="log" id="log"></ul>
+    </div>
+  </aside>
+</main>
+<footer>Open this file from your computer (not through Home Assistant), on the same WiFi as the sprinkler. Each aim takes a few seconds; holding an arrow only sends the latest position. Count ducks before pressing Space.</footer>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const S = { bearing: 0, throwFt: 10, sentB: null, sentT: null, inflight: false, valveOpen: false, timer: null, reachable: null };
+
+  // ---- settings (per-browser) ----
+  const cfgKeys = ['ip','stepDeg','stepFt','minFt','maxFt'];
+  const loadCfg = () => { try { const c = JSON.parse(localStorage.getItem('oto-remote') || '{}'); cfgKeys.forEach(k => { if (c[k] !== undefined) $(k).value = c[k]; }); if (c.bearing !== undefined) S.bearing = c.bearing; if (c.throwFt !== undefined) S.throwFt = c.throwFt; } catch (e) {} };
+  const saveCfg = () => { try { const c = {}; cfgKeys.forEach(k => c[k] = $(k).value); c.bearing = S.bearing; c.throwFt = S.throwFt; localStorage.setItem('oto-remote', JSON.stringify(c)); } catch (e) {} };
+  const cfg = () => ({ ip: $('ip').value.trim(), stepDeg: +$('stepDeg').value || 10, stepFt: +$('stepFt').value || 2, minFt: +$('minFt').value || 4, maxFt: +$('maxFt').value || 30 });
+  cfgKeys.forEach(k => $(k).addEventListener('change', () => { saveCfg(); render(); startPoll(); }));
+
+  // ---- dial ----
+  const ticks = $('ticks');
+  for (let d = 0; d < 360; d += 10) {
+    const major = d % 90 === 0, mid = d % 30 === 0;
+    const r1 = 186, r0 = major ? 168 : mid ? 174 : 179;
+    const a = (d - 90) * Math.PI / 180;
+    const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    l.setAttribute('x1', 200 + r0 * Math.cos(a)); l.setAttribute('y1', 200 + r0 * Math.sin(a));
+    l.setAttribute('x2', 200 + r1 * Math.cos(a)); l.setAttribute('y2', 200 + r1 * Math.sin(a));
+    l.setAttribute('stroke-width', major ? 3 : 1.5);
+    ticks.appendChild(l);
+  }
+  const fmt = n => (Math.round(n * 10) / 10).toString();
+  function render() {
+    const c = cfg();
+    $('needle').style.transform = `rotate(${S.bearing}deg)`;
+    if (S.sentB !== null) { $('ghost').style.transform = `rotate(${S.sentB}deg)`; $('ghost').style.display = ''; } else $('ghost').style.display = 'none';
+    const frac = Math.min(1, Math.max(0, (S.throwFt - 0) / Math.max(1, c.maxFt)));
+    $('ring').setAttribute('r', 20 + frac * 150);
+    $('bearingOut').innerHTML = `${fmt(S.bearing)}<span>°</span>`;
+    $('throwOut').innerHTML = `${fmt(S.throwFt)}<span>ft</span>`;
+    const st = $('stateOut');
+    const pending = S.sentB !== S.bearing || S.sentT !== S.throwFt;
+    if (S.inflight) { st.textContent = 'waddling into position…'; st.className = 'sub moving'; }
+    else if (S.valveOpen) { st.textContent = pending ? 'blasting · new target queued' : 'blasting'; st.className = 'sub open'; }
+    else { st.textContent = 'resting'; st.className = 'sub'; }
+    $('kDeg').textContent = c.stepDeg; $('kFt').textContent = c.stepFt;
+  }
+
+  // ---- device I/O ----
+  const log = (msg, err) => { const li = document.createElement('li'); li.textContent = `${new Date().toLocaleTimeString()} ${msg}`; if (err) li.className = 'err'; $('log').prepend(li); while ($('log').children.length > 40) $('log').lastChild.remove(); };
+  async function hit(path, method = 'GET', ms = 12000) {
+    const { ip } = cfg(); if (!ip) { log('Set the IP first', true); return false; }
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+    try { await fetch(`http://${ip}${path}`, { method, mode: 'no-cors', cache: 'no-store', signal: ctl.signal }); return true; }
+    catch (e) { log(`${method} ${path} failed (${e.name === 'AbortError' ? 'timeout' : 'unreachable'})`, true); return false; }
+    finally { clearTimeout(t); }
+  }
+  // Coalescing sender: one aim in flight; when it finishes, resend if the target moved.
+  async function flush() {
+    if (S.inflight) return;
+    if (S.sentB === S.bearing && S.sentT === S.throwFt) return;
+    S.inflight = true; render();
+    const b = S.bearing, tf = S.throwFt, mm = Math.round(tf * 304.8);
+    const t0 = performance.now();
+    const ok = await hit(`/aim/throw?bearing=${b}&throw=${mm}`);
+    if (ok) { S.sentB = b; S.sentT = tf; S.valveOpen = true; log(`aim ${fmt(b)}° / ${fmt(tf)} ft (${((performance.now() - t0) / 1000).toFixed(1)} s)`); }
+    S.inflight = false; render();
+    if (ok) flush(); else setTimeout(flush, 1500);
+  }
+  const schedule = () => { clearTimeout(S.timer); S.timer = setTimeout(flush, 180); saveCfg(); render(); };
+  async function closeValve() { S.inflight = true; render(); const ok = await hit('/valve/close', 'POST'); if (ok) { S.valveOpen = false; S.sentB = null; S.sentT = null; log('blasting stopped'); } S.inflight = false; render(); }
+  async function stopAll() { clearTimeout(S.timer); S.inflight = true; render(); await hit('/zone/water/cancel', 'POST', 6000); const ok = await hit('/valve/close', 'POST'); S.valveOpen = !ok; S.sentB = null; S.sentT = null; log(ok ? 'stopped, pond is safe' : 'stop sent but close not confirmed', !ok); S.inflight = false; render(); }
+
+  // ---- keys ----
+  const clampFt = v => { const c = cfg(); return Math.min(c.maxFt, Math.max(c.minFt, Math.round(v * 2) / 2)); };
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input')) { if (e.key === 'Escape') { e.target.blur(); $('dial').focus(); } return; }
+    const c = cfg(); const fine = e.shiftKey;
+    switch (e.key) {
+      case 'ArrowLeft':  S.bearing = ((S.bearing - (fine ? 1 : c.stepDeg)) % 360 + 360) % 360; schedule(); break;
+      case 'ArrowRight': S.bearing = ((S.bearing + (fine ? 1 : c.stepDeg)) % 360 + 360) % 360; schedule(); break;
+      case 'ArrowUp':    S.throwFt = clampFt(S.throwFt + (fine ? 0.5 : c.stepFt)); schedule(); break;
+      case 'ArrowDown':  S.throwFt = clampFt(S.throwFt - (fine ? 0.5 : c.stepFt)); schedule(); break;
+      case ' ':          if (e.repeat) return; if (S.valveOpen) closeValve(); else { S.sentB = null; flush(); } break;
+      case 'Enter':      if (e.repeat) return; S.sentB = null; flush(); break;
+      case 'Escape':     if (e.repeat) return; stopAll(); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
+  $('stopBtn').addEventListener('click', stopAll);
+  $('closeBtn').addEventListener('click', closeValve);
+  $('aimBtn').addEventListener('click', () => { S.sentB = null; flush(); });
+
+  // ---- status poll (this endpoint allows cross-origin reads) ----
+  let pollT = null;
+  async function poll() {
+    const { ip } = cfg(); const el = $('conn');
+    if (!ip) { el.textContent = 'Set the sprinkler’s IP to start'; el.className = 'conn'; return; }
+    try {
+      const r = await fetch(`http://${ip}/api/status`, { cache: 'no-store', signal: AbortSignal.timeout(4000) });
+      const j = await r.json();
+      el.textContent = `${ip} · ${j.watering ? 'watering' : 'idle'} · WiFi ${j.wifi_rssi} dBm · build ${j.fw_build}`;
+      el.className = 'conn ok';
+    } catch (e) { el.textContent = `${ip} · not reachable (asleep?)`; el.className = 'conn bad'; }
+  }
+  function startPoll() { clearInterval(pollT); poll(); pollT = setInterval(poll, 3000); }
+
+  loadCfg(); render(); startPoll(); $('dial').focus();
+})();
+</script>
+</body>
+</html>
