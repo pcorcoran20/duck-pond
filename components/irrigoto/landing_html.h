@@ -30,154 +30,202 @@ R"LANDHTML(
 }).catch(function(){});}catch(e){}})();
 </script>
 <style>
-/* b535: winter mode locks the whole UI except the winter banner's
-   "Resume normal operation" -- pointer-events inherit, the banner re-enables
-   its own subtree. Covers controls rendered later too. */
+/* ---- Muscovy design system ------------------------------------------ */
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+:root,:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0d1613;--bg2:#15231d;--bg3:#1b2d26;
+  --green:#5fc8d6;--green-dim:#173e45;--green-glow:rgba(95,200,214,.28);
+  --pond:#5a9d7c;--pond-dim:rgba(90,157,124,.16);
+  --orange:#f0a24a;--orange-dim:rgba(240,162,74,.14);
+  --red:#ff6a57;--red-dim:rgba(255,106,87,.14);
+  --text:#f1ecdc;--text-mid:#9aa893;--text-dim:#4a5a52;
+  --border:#2a3a31;--btn:#1a2a24;--btn-hover:#22352e;
+  --radius:16px;--radius-sm:10px;
+  --radar-bg:#0e2a2c;--radar-grid:#1b4448;
+  --shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px -12px rgba(0,0,0,.6);
+  --font:"Avenir Next","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f3efe4;--bg2:#fffdf6;--bg3:#ebe5d5;
+  --green:#2a7f8f;--green-dim:#d6ecef;--green-glow:rgba(42,127,143,.22);
+  --pond:#2f5a45;--pond-dim:rgba(47,90,69,.12);
+  --orange:#b8671a;--orange-dim:rgba(184,103,26,.12);
+  --red:#c43a2f;--red-dim:rgba(196,58,47,.10);
+  --text:#15241d;--text-mid:#5e6b5a;--text-dim:#b8b3a3;
+  --border:#d9d2bf;--btn:#f7f3e8;--btn-hover:#ece6d6;
+  --radar-bg:#dff0f2;--radar-grid:#b9d8dc;
+  --shadow:0 1px 2px rgba(21,36,29,.06),0 8px 24px -12px rgba(21,36,29,.18);
+}
+html,body{background:var(--bg);}
+body{color:var(--text);font:15px/1.45 var(--font);-webkit-font-smoothing:antialiased;}
+button,input,select,textarea{font:inherit;color:inherit;}
+button{cursor:pointer;}
+a{color:var(--green);}
+:focus-visible{outline:2px solid var(--green);outline-offset:2px;}
+::selection{background:var(--green-dim);}
+
+/* top bar, shared by every page */
+header{display:flex;align-items:center;gap:12px;padding:14px 18px 12px;
+  border-bottom:1px solid var(--border);background:var(--bg);flex-shrink:0;}
+.back{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;
+  border-radius:50%;border:1px solid var(--border);background:var(--bg2);color:var(--text);
+  text-decoration:none;font-size:18px;line-height:1;flex-shrink:0;}
+.back:active{background:var(--bg3);}
+.logo{display:inline-flex;align-items:center;gap:8px;font-weight:800;font-size:17px;
+  letter-spacing:-.01em;color:var(--text);text-decoration:none;white-space:nowrap;}
+.logo .duck{flex-shrink:0;}
+.hdr-title,.header-mid{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--text-mid);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.page-logo{display:none;}
+#conn,.usage{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-mid);margin-left:auto;white-space:nowrap;}
+.usage{font-size:11px;max-width:42%;overflow:hidden;text-overflow:ellipsis;display:block;}
+#conn-dot{width:8px;height:8px;border-radius:50%;background:var(--text-dim);transition:all .4s;flex-shrink:0;}
+#conn-dot.ok{background:var(--green);box-shadow:0 0 0 3px var(--green-dim);}
+#conn-dot.err{background:var(--red);box-shadow:0 0 0 3px var(--red-dim);}
+
+/* sections and cards */
+main{padding:18px 18px 28px;}
+section{margin-bottom:22px;}
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin:0 2px 10px;gap:10px;}
+.sec-title{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--pond);}
+.sec-btn,#refresh-btn{font-size:13px;font-weight:600;color:var(--green);background:var(--bg2);
+  padding:6px 12px;border-radius:999px;cursor:pointer;border:1px solid var(--border);text-decoration:none;}
+.sec-btn:active,#refresh-btn:active{background:var(--green-dim);}
+.card,.status-card,.upload-card{background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow);}
+.empty{color:var(--text-mid);font-size:14px;padding:6px 0;text-align:center;}
+.hint,.note,.cal-desc{font-size:13px;color:var(--text-mid);line-height:1.55;}
+.note,.cal-desc{margin-bottom:12px;}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 16px;
+  border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--btn);color:var(--text);
+  font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;
+  transition:background .12s,transform .06s;}
+.btn:active{background:var(--btn-hover);transform:translateY(1px);}
+.btn:disabled{opacity:.45;cursor:default;transform:none;}
+.btn-primary,.btn-green{background:var(--green);border-color:var(--green);color:#fff;}
+.btn-primary:active,.btn-green:active{filter:brightness(.92);background:var(--green);}
+.btn-danger,.btn-red{color:var(--red);border-color:var(--red);background:transparent;}
+.btn-danger:active,.btn-red:active{background:var(--red-dim);}
+
+/* fields */
+input[type=text],input[type=number],input[type=time],select,.throw-inp,.path-inp,.file-inp{
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--text);font-size:15px;padding:10px 12px;width:100%;}
+input:focus,select:focus{outline:2px solid var(--green);outline-offset:-1px;border-color:transparent;}
+input::placeholder{color:var(--text-dim);}
+
+/* toggle switch */
+.theme-switch{position:relative;display:inline-block;width:46px;height:26px;vertical-align:middle;flex-shrink:0;}
+.theme-switch input{opacity:0;width:0;height:0;}
+.theme-slider{position:absolute;cursor:pointer;inset:0;background:var(--bg3);transition:.25s;
+  border-radius:26px;border:1px solid var(--border);}
+.theme-slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;top:3px;
+  background:var(--text-mid);transition:.25s;border-radius:50%;}
+.theme-switch input:checked + .theme-slider{background:var(--green);border-color:var(--green);}
+.theme-switch input:checked + .theme-slider:before{transform:translateX(20px);background:#fff;}
+
+/* banners (landing winter / cal-incomplete) */
+.banner{margin:12px 18px 0;padding:12px 14px;border-radius:var(--radius-sm);font-size:14px;
+  font-weight:600;text-align:center;border:1px solid;}
+.banner-info{color:var(--green);border-color:var(--green);background:var(--green-dim);}
+.banner-warn{color:var(--red);border-color:var(--red);background:var(--red-dim);}
+.banner .btn{margin-top:10px;}
+
+/* winter lock (b535) */
 body.winter-lock{pointer-events:none;}
 body.winter-lock #winter-banner{pointer-events:auto;}
 body.winter-lock button:not(#winter-banner button),body.winter-lock input,
 body.winter-lock select,body.winter-lock a{opacity:.45;}
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-:root,:root[data-theme="dark"]{
-  --bg:#060c10;--bg2:#0b1820;--bg3:#0f2030;
-  --green:#00e87a;--green-dim:#0a3020;--green-glow:rgba(0,232,122,.22);
-  --orange:#ff8c00;--text:#c8e0d4;--text-dim:#1e3828;--text-mid:#608070;
-  --border:#0c2a1e;--btn:#0b1c28;--radius:12px;--radius-sm:8px;
-  /* --radar-bg drives both the .zone-radar thumbnails here and the
-     full canvas on the zone-setup page (which reads it via
-     getComputedStyle). Keep these in sync with zone_setup_html.h. */
-  --radar-bg:#0a1a12;
-}
-:root[data-theme="light"]{
-  --bg:#f7f9f8;--bg2:#ffffff;--bg3:#eef3f0;
-  --green:#00913f;--green-dim:#cfeede;--green-glow:rgba(0,145,63,.18);
-  --orange:#c95400;--text:#0e1a14;--text-dim:#cfdcd5;--text-mid:#5a7468;
-  --border:#cee0d7;--btn:#f0f5f2;
-  --radar-bg:#E8F4FE;  /* light blue; also used by zone-setup canvas */
-}
-.theme-switch{position:relative;display:inline-block;width:44px;height:22px;vertical-align:middle;}
-.theme-switch input{opacity:0;width:0;height:0;}
-.theme-slider{position:absolute;cursor:pointer;inset:0;background:var(--bg3);
-  transition:.3s;border-radius:22px;border:1px solid var(--border);}
-.theme-slider:before{position:absolute;content:"";height:14px;width:14px;
-  left:3px;top:3px;background:var(--text-mid);transition:.3s;border-radius:50%;}
-.theme-switch input:checked + .theme-slider{background:var(--green-dim);border-color:var(--green);}
-.theme-switch input:checked + .theme-slider:before{transform:translateX(22px);background:var(--green);}
-html,body{height:100%;background:var(--bg);color:var(--text);
-  font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;}
-body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;height:100dvh;}
-header{display:flex;align-items:center;justify-content:space-between;
-  padding:14px 20px 10px;flex-shrink:0;border-bottom:1px solid var(--border);}
-.logo{font-family:'Courier New',monospace;font-size:20px;font-weight:700;
-  letter-spacing:.15em;color:var(--green);text-shadow:0 0 12px var(--green-glow);}
-.dev-name-inp{background:none;border:none;color:var(--text);font-size:13px;
-  font-family:inherit;padding:0;width:160px;margin-top:1px;cursor:text;}
-.dev-name-inp:focus{outline:1px solid var(--green);border-radius:3px;padding:0 3px;}
-#conn{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-mid);}
-#conn-dot{width:7px;height:7px;border-radius:50%;background:var(--text-dim);transition:all .4s;}
-#conn-dot.ok{background:var(--green);box-shadow:0 0 8px var(--green);}
-main{flex:1;overflow-y:auto;padding:16px;}
-section{margin-bottom:18px;}
-.sec-hdr{display:flex;align-items:center;justify-content:space-between;
-  margin-bottom:10px;padding:0 2px;}
-.sec-title{font-size:11px;letter-spacing:.18em;text-transform:uppercase;
-  color:var(--text-mid);font-weight:500;}
-.sec-btn{font-size:12px;color:var(--green);background:none;
-  padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer;
-  border:1px solid var(--border);}
-.sec-btn:active{background:var(--green-dim);}
-.card{background:var(--bg2);border:1px solid var(--border);
-  border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;}
-.zone-card{display:flex;gap:12px;align-items:flex-start;}
-/* No CSS background: the JS fills only inside the outermost-radar
-   circle so the corners show the card behind the canvas — matches
-   the zone-setup radar's "circle on page bg" look. */
-.zone-radar{flex-shrink:0;}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+
+body{min-height:100dvh;display:flex;flex-direction:column;max-width:560px;margin:0 auto;}
+input.dev-name-inp{background:none;border:none;width:150px;color:var(--text);font-size:13px;font-weight:600;
+  padding:0;width:150px;cursor:text;border-radius:4px;}
+.dev-name-inp:focus{outline:2px solid var(--green);outline-offset:2px;}
+.edit-icon{font-size:12px;color:var(--text-mid);cursor:pointer;flex-shrink:0;}
+main{flex:1;overflow-y:auto;}
+/* zone cards */
+.zone-card{display:flex;gap:14px;align-items:flex-start;}
+.zone-radar{flex-shrink:0;border-radius:50%;}
 .zone-body{flex:1;min-width:0;}
-.zone-name-wrap{display:flex;align-items:center;gap:6px;margin-bottom:3px;}
-.zone-name{font-size:16px;font-weight:600;color:var(--text);letter-spacing:.02em;
-  background:none;border:none;color:var(--text);font-size:16px;font-weight:600;
-  padding:0;width:100%;font-family:inherit;}
-.zone-name:focus{outline:1px solid var(--green);border-radius:4px;padding:0 4px;}
-.edit-icon{font-size:11px;color:var(--text-mid);cursor:pointer;flex-shrink:0;}
-.zone-meta{font-size:12px;color:var(--text-mid);margin-bottom:10px;}
+.zone-name-wrap{display:flex;align-items:center;gap:6px;margin-bottom:2px;}
+input.zone-name,.zone-name{font-size:17px;font-weight:700;color:var(--text);background:none;border:none;padding:0;
+  width:100%;letter-spacing:-.01em;border-radius:4px;}
+.zone-name:focus{outline:2px solid var(--green);outline-offset:2px;border-radius:4px;}
+.zone-meta{font-size:13px;color:var(--text-mid);margin-bottom:12px;}
 .zone-actions{display:flex;gap:8px;flex-wrap:wrap;}
-.btn{padding:8px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);
-  background:var(--btn);color:var(--text);font-size:13px;cursor:pointer;
-  text-decoration:none;display:inline-flex;align-items:center;gap:5px;
-  transition:background .15s;white-space:nowrap;}
-.btn:active{background:var(--green-dim);border-color:#1a5035;}
-.btn-primary{background:var(--green-dim);border-color:#1a5035;color:var(--green);}
-.btn-primary:active{background:#0d3824;}
-.empty{color:var(--text-mid);font-size:13px;padding:4px 0;}
-.dev-row{display:flex;justify-content:space-between;align-items:center;
-  padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.zone-actions .btn{padding:9px 14px;font-size:13px;}
+.watering-bar{height:6px;border-radius:3px;background:var(--bg3);overflow:hidden;margin:8px 0 4px;}
+.watering-bar > div,.watering-fill{height:100%;background:var(--green);border-radius:3px;}
+.watering-label{font-size:12px;color:var(--green);font-weight:600;}
+.pulse-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);
+  margin-right:6px;animation:sched-pulse-anim 1.2s ease-in-out infinite;}
+/* schedule summary rows */
+.sched-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;}
+.sched-row:last-child{border-bottom:none;}
+.sched-dot{display:inline-block;font-size:10px;margin-right:2px;line-height:1;transition:color .2s;}
+@keyframes sched-pulse-anim{0%,100%{opacity:1}50%{opacity:.35}}
+.sched-pulse{animation:sched-pulse-anim 1.2s ease-in-out infinite;}
+/* device card rows */
+.dev-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;
+  border-bottom:1px solid var(--border);font-size:14px;}
 .dev-row:last-child{border-bottom:none;}
 .dev-label{color:var(--text-mid);}
-.dev-val{color:var(--text);font-family:'Courier New',monospace;font-size:12px;}
-.cal-desc{font-size:12px;color:var(--text-mid);margin-bottom:10px;line-height:1.5;}
-/* Water modal */
-#modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
-  z-index:100;align-items:flex-end;justify-content:center;}
+.dev-val{color:var(--text);font-family:var(--mono);font-size:13px;text-align:right;}
+/* water modal: bottom sheet */
+#modal-bg{display:none;position:fixed;inset:0;background:rgba(13,22,19,.6);z-index:100;
+  align-items:flex-end;justify-content:center;backdrop-filter:blur(2px);}
 #modal-bg.open{display:flex;}
-#modal{background:var(--bg2);border:1px solid var(--border);
-  border-radius:var(--radius) var(--radius) 0 0;padding:20px;width:100%;
-  max-width:480px;}
-.modal-title{font-size:16px;font-weight:600;margin-bottom:4px;}
-.modal-sub{font-size:12px;color:var(--text-mid);margin-bottom:18px;}
-.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;}
-.mode-btn{padding:14px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);
-  background:var(--btn);color:var(--text);font-size:13px;cursor:pointer;
-  text-align:center;line-height:1.4;}
-.mode-btn.sel{border-color:var(--green);background:var(--green-dim);color:var(--green);}
-.mode-btn span{display:block;font-size:11px;color:var(--text-mid);margin-top:3px;}
-.mode-btn.sel span{color:rgba(0,232,122,.6);}
+#modal{background:var(--bg2);border:1px solid var(--border);border-bottom:none;
+  border-radius:22px 22px 0 0;padding:14px 20px 28px;width:100%;max-width:560px;
+  max-height:88dvh;overflow-y:auto;}
+#modal:before{content:"";display:block;width:40px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 14px;}
+.modal-title{font-size:20px;font-weight:800;margin-bottom:2px;letter-spacing:-.01em;}
+.modal-sub{font-size:13px;color:var(--text-mid);margin-bottom:16px;}
+.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;}
+.mode-btn{padding:12px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);
+  background:var(--btn);color:var(--text);font-size:14px;font-weight:600;text-align:left;line-height:1.35;}
+.mode-btn span{display:block;font-size:12px;font-weight:400;color:var(--text-mid);margin-top:2px;}
+.mode-btn.sel{border-color:var(--green);background:var(--green-dim);color:var(--green);box-shadow:inset 0 0 0 1px var(--green);}
+.mode-btn.sel span{color:var(--green);opacity:.8;}
+#chase-row{margin:-6px 0 16px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);font-size:13px;}
 .modal-actions{display:flex;gap:10px;}
-.modal-actions .btn{flex:1;justify-content:center;}
-#modal-status{font-size:12px;color:var(--text-mid);text-align:center;
-  margin-top:10px;min-height:18px;}
-/* Schedule-row status dot pulses while that zone is actively watering. */
-.sched-dot{display:inline-block;font-size:10px;margin-right:2px;line-height:1;
-  transition:color .2s, text-shadow .2s;}
-@keyframes sched-pulse-anim{
-  0%,100%{opacity:1;}
-  50%{opacity:.35;}
-}
-.sched-pulse{animation:sched-pulse-anim 1.2s ease-in-out infinite;}
+.modal-actions .btn{flex:1;padding:13px;font-size:15px;}
+#modal-status{font-size:13px;color:var(--text-mid);text-align:center;margin-top:10px;min-height:18px;}
+input[type=range]{accent-color:var(--green);}
 </style>
 </head>
 <body>
-<header style="justify-content:center;flex-direction:column;align-items:center;gap:2px;position:relative;">
-  <span class="logo">Irrigoto</span>
-  <div style="display:flex;align-items:center;gap:4px;">
+<header>
+  <a class="logo" href="/"><svg class="duck" width="26" height="22" viewBox="0 0 30 26" aria-hidden="true"><path d="M3 18c1-6 5-9 10-9 3 0 5 1 7 3l6-1-3 4c0 5-5 9-11 9S3 22 3 18z" fill="var(--pond)"/><circle cx="21.5" cy="12.5" r="3.6" fill="var(--pond)"/><path d="M24.5 12.5l4 1-3.5 1.5z" fill="var(--red)"/><circle cx="22" cy="12" r=".9" fill="var(--bg2)"/></svg>Irrigoto</a>
+  <div style="display:flex;align-items:center;gap:4px;margin-left:4px;">
     <input class="dev-name-inp" id="dev-name-inp" type="text" value="irrigoto"
       title="Tap to rename"
       onblur="saveDeviceName(this.value)"
       onkeydown="if(event.key==='Enter')this.blur()">
-    <span style="font-size:11px;color:var(--text-mid);cursor:pointer" title="Tap name to edit">&#9998;</span>
+    <span class="edit-icon" title="Tap name to edit">&#9998;</span>
   </div>
-  <div id="conn" style="position:absolute;right:20px;top:50%;transform:translateY(-50%);">
-    <div id="conn-dot"></div><span id="conn-txt">connecting</span>
-  </div>
+  <div id="conn"><div id="conn-dot"></div><span id="conn-txt">connecting</span></div>
 </header>
 <!-- b490: shown when the saved pressure cal was finished on the await timeout
      with throw anchors inherited from the previous cal instead of measured. -->
 <!-- b525: winter-sleep banner. This is the no-HA escape hatch -- if the unit
      comes up winterized, the countdown and the cancel button are the first
      things on the page. -->
-<div id="winter-banner" style="display:none;margin:8px 12px;padding:10px 12px;
-     border:1px solid #60a5fa;border-radius:6px;background:rgba(96,165,250,0.12);
-     color:#60a5fa;font-size:13px;font-weight:600;text-align:center;">
+<div id="winter-banner" class="banner banner-info" style="display:none">
   &#10052; Winter sleep active &mdash; sleeping again in
   <span id="winter-left">&mdash;</span>
   <div style="margin-top:8px">
-    <button class="btn" style="border-color:#60a5fa;color:#60a5fa"
+    <button class="btn"
             onclick="exitWinter()">Resume normal operation</button>
   </div>
 </div>
-<div id="cal-incomplete" style="display:none;margin:8px 12px;padding:8px 12px;
-     border:1px solid #f87171;border-radius:6px;background:rgba(248,113,113,0.12);
-     color:#f87171;font-size:13px;font-weight:600;text-align:center;">
+<div id="cal-incomplete" class="banner banner-warn" style="display:none">
   &#9888; Calibration incomplete &mdash; throw values were never entered, so the
   previous cal's throw scale is in use. Re-run the pressure calibration.
 </div>
@@ -273,7 +321,7 @@ section{margin-bottom:18px;}
         &#128054; Chase <span>play mode &middot; 1-10 min</span>
       </button>
     </div>
-    <div id="chase-row" style="display:none;margin:-6px 0 18px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--btn);font-size:12px;">
+    <div id="chase-row" style="display:none">
       <label for="chase-dur" style="display:block;color:var(--text-mid);margin-bottom:6px;">
         Chase duration
       </label>
@@ -320,7 +368,7 @@ function drawRadar(canvas, pts) {
   // Filled radar background — only inside the outermost circle. The
   // canvas corners stay transparent so the card bg shows through.
   const radarBg = getComputedStyle(document.documentElement)
-                  .getPropertyValue('--radar-bg').trim() || '#0a1a12';
+                  .getPropertyValue('--radar-bg').trim() || '#0e2a2c';
   ctx.beginPath(); ctx.arc(cx,cy,maxR,0,Math.PI*2);
   ctx.fillStyle = radarBg; ctx.fill();
   // Display domain (mm at rim): this zone's own max throw + 3ft (914mm) buffer,
@@ -331,7 +379,7 @@ function drawRadar(canvas, pts) {
   for(let f=_step; f<=_maxFt+0.01; f+=_step){
     const r=f*304.8/_dom*maxR;
     ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);
-    ctx.strokeStyle='rgba(0,80,40,.35)';ctx.lineWidth=.5;ctx.stroke();
+    ctx.strokeStyle='rgba(23,62,69,.35)';ctx.lineWidth=.5;ctx.stroke();
   }
   if(!pts||pts.length<2){
     ctx.fillStyle='rgba(96,128,112,.4)';ctx.font='9px sans-serif';
@@ -348,7 +396,7 @@ function drawRadar(canvas, pts) {
   ctx.beginPath();
   wp.forEach(({deg,mm},i)=>{const[x,y]=pol(deg,mm);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
   ctx.closePath();
-  ctx.fillStyle='rgba(0,232,122,.08)';ctx.fill();
+  ctx.fillStyle='rgba(63,182,198,.08)';ctx.fill();
   ctx.strokeStyle='rgba(255,140,0,.7)';ctx.lineWidth=1;ctx.stroke();
   // Points
   wp.forEach(({deg,mm})=>{
@@ -411,7 +459,7 @@ function renderZones(zones){
             <div class="zone-actions">
               <button class="btn btn-primary" id="wbtn-${z.id}" onclick="handleZoneBtn(${z.id})">&#127783; Water Zone</button>
               <a class="btn" href="/zone?id=${z.id}">&#9881; Setup</a>
-              <button class="btn" style="border-color:rgba(248,113,113,.3);color:#f87171;padding:8px 10px" onclick="deleteZone(${z.id},'${z.name||'Zone #'+z.id}')">&#128465;</button>
+              <button class="btn" style="border-color:rgba(248,113,113,.3);color:#e0614f;padding:8px 10px" onclick="deleteZone(${z.id},'${z.name||'Zone #'+z.id}')">&#128465;</button>
             </div>
           </div>
         </div>`;
@@ -463,8 +511,8 @@ async function startWater(){
     const d=await r.json();
     if(d.ok){ st.style.color='var(--green)'; st.textContent='Watering started.';
       setTimeout(closeModal,1500); }
-    else { st.style.color='#f87171'; st.textContent=d.error||'Failed to start.'; btn.disabled=false; btn.textContent='\u25B6 Start'; }
-  }catch(e){ st.style.color='#f87171'; st.textContent='Error: '+e.message;
+    else { st.style.color='#e0614f'; st.textContent=d.error||'Failed to start.'; btn.disabled=false; btn.textContent='\u25B6 Start'; }
+  }catch(e){ st.style.color='#e0614f'; st.textContent='Error: '+e.message;
     btn.disabled=false; btn.textContent='\u25B6 Start'; }
 }
 
@@ -472,7 +520,7 @@ async function startWater(){
 function rssiLabel(rssi){
   if(!rssi||rssi>0) return '<span style="color:var(--text-mid)">disconnected</span>';
   const bars = rssi>=-60?4:rssi>=-70?3:rssi>=-80?2:1;
-  const col = bars>=3?'var(--green)':bars===2?'var(--orange)':'#f87171';
+  const col = bars>=3?'var(--green)':bars===2?'var(--orange)':'#e0614f';
   const label = rssi>=-60?'Excellent':rssi>=-70?'Good':rssi>=-80?'Fair':'Weak';
   const barHtml=Array.from({length:4},(_,i)=>
     `<span style="display:inline-block;width:4px;height:${6+i*3}px;margin-right:2px;border-radius:1px;`+
@@ -549,7 +597,7 @@ async function refresh(){
       (d.wifi_ip?'<span style="color:var(--text-mid);font-size:11px">'+d.wifi_ip+'</span> ':'')+rssiLabel(d.wifi_rssi);
     if(d.bat_mv){
       const v=(d.bat_mv/1000).toFixed(3);
-      const col=d.bat_mv>=3700?'var(--green)':d.bat_mv>=3400?'var(--orange)':'#f87171';
+      const col=d.bat_mv>=3700?'var(--green)':d.bat_mv>=3400?'var(--orange)':'#e0614f';
       document.getElementById('d-bat').innerHTML='<span style="color:'+col+'">'+v+'V</span>';
     }
     document.getElementById('d-storage').textContent=
@@ -620,7 +668,7 @@ function updateWateringState(watering, mode, estMin, waterZoneId, cleanupPass) {
     if(isWateringZone){
       btn.innerHTML='&#9632; Stop';
       btn.classList.remove('btn-primary');
-      btn.style.borderColor='#7f2020'; btn.style.color='#f87171';
+      btn.style.borderColor='#7f2020'; btn.style.color='#e0614f';
       btn.disabled = false;
     } else if(watering){
       // Another zone is watering -- disable this button
