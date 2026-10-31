@@ -54,3 +54,8 @@ Documents/
 # Editor / IDE state — per-developer, often contains user-folder paths.
 .vscode/
 .idea/
+
+# Factory flash backups — full 8 MB per-unit device images (e.g.
+# oto_factory_43c89c.bin). Never commit: they carry that unit's own
+# calibration blob and WiFi config, and they'd bloat the repo.
+*.bin
