@@ -183,6 +183,20 @@ void IrrigotoComponent::loop() {
         }
     }
 
+    // charging: one I2C byte every 10 s, only while the sensor rail is already
+    // up (irrigoto_charger_sense returns -1 otherwise, so this never wakes it).
+    if (charging_sensor_ != nullptr) {
+        uint32_t now_ms = millis();
+        if (now_ms - last_charging_poll_ms_ > 10000) {
+            last_charging_poll_ms_ = now_ms;
+            int ch = irrigoto_charger_sense();
+            if (ch >= 0 && ch != prev_charging_) {
+                charging_sensor_->publish_state(ch == 1);
+                prev_charging_ = ch;
+            }
+        }
+    }
+
     // ── Text sensors ── (b469: throttled to ~2s) ───────────────────────────────
     // get_status / get_zone_name hit LittleFS (opendir/load) on EVERY call.
     // Running them every loop floods the API log-forward path: LittleFS log ->

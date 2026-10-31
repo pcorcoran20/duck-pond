@@ -42,6 +42,8 @@ float irrigoto_get_throw_mm(void);
 
 /** True while a watering run is active. */
 bool irrigoto_is_watering(void);
+/** 1 = charger/solar active, 0 = not, -1 = unknown (see irrigoto.c). */
+int  irrigoto_charger_sense(void);
 
 /** Estimated minutes remaining for the current watering run.
  *  Updated continuously from the watering loop based on remaining

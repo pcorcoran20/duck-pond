@@ -498,6 +498,10 @@ binary_sensor:
     watering:
       name: "${friendly_name} Watering"
       device_class: running
+    # Charger / solar active, read from the TCA6408A input register (red-LED net).
+    charging:
+      name: "${friendly_name} Charging"
+      device_class: battery_charging
     # b370: confirmed valve state from the cached encoder angle (no I2C poll
     # — reading the live encoder powers the sensor rail and blocks deep-sleep).
     # ON = any non-closed position (>8 deg off the 231 deg seat). Backs the

@@ -207,6 +207,7 @@ static TickType_t s_motor_rail_last_use = 0;
 static RTC_DATA_ATTR bool s_lowbatt_hold = false;
 static bool s_tca_outputs  = false;  // true once LED expander pins are configured as outputs
 static led_expander_t s_led_expander = LED_EXP_UNKNOWN;
+static uint8_t s_led_cur_val = LED_OFF;   // last colour index handed to tca_led_set (charger sense needs red released)
 // b529: raw detect reads, exposed in /api/all (-1 = I2C read failed).
 static int16_t s_led_exp_adv = -1;   // SX1502 RegAdvanced (0x00 => SX1502)
 static int16_t s_led_exp_cfg = -1;   // TCA6408A config register
@@ -5945,6 +5946,7 @@ static void led_expander_detect(void)
 
 static void tca_led_set(uint8_t val)
 {
+    s_led_cur_val = val;
     sensor_rail_on();
     led_expander_detect();
 
@@ -16061,7 +16063,8 @@ static esp_err_t api_all_handler(httpd_req_t *req)
         "\"cal_incomplete\":%s,"                          // b490: inherited throw anchors
         "\"uart_log\":%s,\"uart_log_want\":%s,\"uart_log_compiled\":%s,"  // b512: console active / switch / ESPHome-UART
         "\"fault_hold_min\":%u,"                                          // b522: post-fault awake hold (0 = off)
-        "\"device_name\":\"%s\"",
+        "\"device_name\":\"%s\","
+        "\"charging\":%d",
         FW_BUILD, wifi_get_rssi(), s_wifi_ip,
         hostname ? hostname : "",
         bat_mv,
@@ -16079,7 +16082,8 @@ static esp_err_t api_all_handler(httpd_req_t *req)
         (uart_console_load_once(), s_uart_log_want) ? "true" : "false",
         (IRRIGOTO_UART_LOG_BAUD != 0) ? "true" : "false",
         (fault_hold_load_once(), (unsigned)s_fault_hold_min),
-        s_device_name);
+        s_device_name,
+        irrigoto_charger_sense());
     if (n < 0) n = 0;
     if (n >= (int)sizeof(buf)) n = (int)sizeof(buf) - 1;   // b523: never send past buf
     httpd_resp_send_chunk(req, buf, n);
@@ -19355,6 +19359,21 @@ float irrigoto_get_throw_mm(void)
     if (s_web_valve_deg >= VALVE_CAL_START_DEG)
         return cal_valve_deg_to_throw_mm(s_web_valve_deg);
     return 0.0f;
+}
+
+// Charger sense (TCA6408A boards). The BQ25504 status pin and TCA P0 share the
+// red-LED net; while firmware has red released (P0 high) the charger alone
+// decides the net level, so the INPUT register bit0 reads LOW when charging.
+// Returns 1 charging, 0 not charging, -1 unknown (rail off, SX1502 board,
+// or firmware is currently driving red itself).
+int irrigoto_charger_sense(void)
+{
+    if (!s_sensor_rail || s_led_expander != LED_EXP_TCA6408A) return -1;
+    if (s_led_cur_val == LED_RED || s_led_cur_val == LED_YELLOW ||
+        s_led_cur_val == LED_PURPLE || s_led_cur_val == LED_WHITE) return -1;
+    uint8_t in = 0xFF;
+    if (i2c_bus_read_reg(ADDR_TCA6408A, 0x00 /* INPUT */, &in, 1) != ESP_OK) return -1;
+    return (in & 0x01) ? 0 : 1;
 }
 
 bool irrigoto_is_watering(void)

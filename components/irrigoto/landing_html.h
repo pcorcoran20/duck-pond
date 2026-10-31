@@ -262,6 +262,7 @@ input[type=range]{accent-color:var(--green);}
       <div class="dev-row"><span class="dev-label">Firmware</span><span class="dev-val" id="d-fw">&mdash;</span></div>
       <div class="dev-row"><span class="dev-label">WiFi</span><span class="dev-val" id="d-wifi">&mdash;</span></div>
       <div class="dev-row"><span class="dev-label">Battery</span><span class="dev-val" id="d-bat">&mdash;</span></div>
+      <div class="dev-row"><span class="dev-label">Charger</span><span class="dev-val" id="d-chg">&mdash;</span></div>
       <div class="dev-row"><span class="dev-label">Storage</span><span class="dev-val" id="d-storage">&mdash;</span></div>
       <div class="dev-row" onclick="toggleDetailLog()" style="cursor:pointer" title="Toggle per-pass detail log for smooth mode watering">
         <span class="dev-label">Detail log</span><span class="dev-val" id="d-detail">Off</span>
@@ -595,6 +596,8 @@ async function refresh(){
       (d.uart_log===undefined?'':(d.uart_log?' · UART log on':' · UART log off'));
     document.getElementById('d-wifi').innerHTML=
       (d.wifi_ip?'<span style="color:var(--text-mid);font-size:11px">'+d.wifi_ip+'</span> ':'')+rssiLabel(d.wifi_rssi);
+    {const c=document.getElementById('d-chg');
+     if(c)c.innerHTML=d.charging===1?'<span style="color:var(--green)">&#9889; charging</span>':d.charging===0?'not charging':'<span style="color:var(--text-mid)">unknown</span>';}
     if(d.bat_mv){
       const v=(d.bat_mv/1000).toFixed(3);
       const col=d.bat_mv>=3700?'var(--green)':d.bat_mv>=3400?'var(--orange)':'#e0614f';

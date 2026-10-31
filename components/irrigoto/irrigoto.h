@@ -132,6 +132,7 @@ class IrrigotoComponent : public Component, public api::CustomAPIDevice {
   void set_water_minutes_remaining_sensor(sensor::Sensor *s) { water_remaining_sensor_ = s; }
   void set_watering_sensor(binary_sensor::BinarySensor *s){ watering_sensor_  = s; }
   void set_valve_open_sensor(binary_sensor::BinarySensor *s){ valve_open_sensor_ = s; }
+  void set_charging_sensor(binary_sensor::BinarySensor *s)  { charging_sensor_   = s; }
   void set_status_sensor(text_sensor::TextSensor *s)      { status_sensor_    = s; }
   void set_zone_name_sensor(text_sensor::TextSensor *s)   { zone_name_sensor_ = s; }
   void set_zone_select(IrrigotoZoneSelect *s)             { zone_select_      = s; }
@@ -167,6 +168,9 @@ class IrrigotoComponent : public Component, public api::CustomAPIDevice {
   binary_sensor::BinarySensor *watering_sensor_{nullptr};
   binary_sensor::BinarySensor *valve_open_sensor_{nullptr};
   int                          prev_valve_open_{-2};  // -2 = never published
+  binary_sensor::BinarySensor *charging_sensor_{nullptr};
+  int                          prev_charging_{-2};
+  uint32_t                     last_charging_poll_ms_{0};
   text_sensor::TextSensor     *status_sensor_{nullptr};
   text_sensor::TextSensor     *zone_name_sensor_{nullptr};
   text_sensor::TextSensor     *cal_state_sensor_{nullptr};
