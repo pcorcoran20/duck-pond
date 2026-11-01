@@ -9,6 +9,8 @@ touch this folder.
 | `homeassistant/irrigoto_43c89c_spots.yaml` | HA package: spot-water named trees, dry travel between them, optional schedule |
 | `homeassistant/oto_joystick_card.yaml` | Lovelace manual card for the joystick |
 | `tools/duck-pond-remote.html` | Keyboard remote. Open from disk, not through HA (HTTPS can't call the device over HTTP) |
+| `design/hearth-guide.md` | Exact-values style guide extracted from the Hearth Dashboard Studio artifact — the house look the device pages follow |
+| `design/spec.md` + `shared.css`, `sprite.html`, `blocks/`, `hearth-icons.json` | The implementation spec that produced the Hearth component pass (b1c9013): shared CSS prelude, per-page CSS blocks, icon sprite + catalog |
 
 Device: `irrigoto-43c89c`, 8 MB flash, TCA6408A LED expander. MAC kept out of the
 repo (it's on the device page in HA) — upstream's `.gitignore` keeps per-user MACs

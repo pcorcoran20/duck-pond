@@ -1,0 +1,57 @@
+body{max-width:560px;margin:0 auto;padding-bottom:24px;}
+main{gap:12px;}
+main > .sec-hdr{margin-top:4px;}
+/* status readout: Hearth .holrow list inside a panel; 13px values (glance text), status inks for light theme */
+.status-card{padding:2px 14px;}
+.status-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.status-row:last-child{border-bottom:0;}
+.status-row .lbl{display:flex;align-items:center;gap:7px;color:var(--text-mid);font-weight:500;}
+.status-row .lbl svg.i{width:16px;height:16px;}
+.status-row .val{color:var(--text);font-family:var(--mono);font-size:13px;text-align:right;font-variant-numeric:tabular-nums;}
+.status-row .val.warn{color:var(--orange-ink);}
+.status-row .val.err{color:var(--red-ink);}
+/* section counters as Hearth .pg pills (panel fill, 1px line) so the JS-written orange on #delay-state reads in sun */
+#delay-state,#ent-count{letter-spacing:0;text-transform:none;font-size:11px;padding:3px 9px;border-radius:99px;background:var(--bg);border:1px solid var(--border);}
+/* rain delay: .presets grid + a .field row */
+.presets{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.presets .btn{padding:8px 4px;background:var(--bg);}
+.delay-row{display:flex;gap:8px;margin-top:10px;align-items:center;}
+.delay-row .btn{flex:none;}
+#delay-custom{flex:1;}
+#delay-status{margin-top:8px;min-height:1.4em;}
+/* entries (DOM-order contract: only entry cards are direct children of #entries) */
+#entries{display:flex;flex-direction:column;gap:8px;}
+.entry{position:relative;}
+.entry.disabled{opacity:.5;}
+.entry-hdr{display:flex;align-items:center;gap:8px;margin-bottom:12px;}
+.entry-num{flex:1;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mid);}
+.next-preview{padding:3px 8px;border-radius:99px;background:var(--bg3);white-space:nowrap;}
+.entry-del{display:inline-flex;align-items:center;min-height:36px;padding:6px 12px;background:var(--bg2);border:1px solid var(--border);
+border-radius:var(--radius-sm);color:var(--red);font-size:13px;font-weight:500;cursor:pointer;}
+.entry-del:active{background:var(--btn-hover);border-color:var(--text-mid);}
+.row{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
+.row > .col{flex:1;min-width:0;}
+/* form labels = Hearth .field label (12.5/500, sentence case); !important beats the JS-inlined Days label style; the Enabled label.theme-switch is excluded */
+.col label,.entry label:not(.theme-switch){display:block;font-size:12.5px!important;font-weight:500;letter-spacing:0!important;text-transform:none!important;color:var(--text)!important;margin-bottom:6px;}
+/* day picker: Hearth .seg track; selected = accent fill (outdoor legibility) */
+.days{display:flex;gap:2px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px;}
+.day{flex:1;min-height:40px;padding:0;text-align:center;font-size:12.5px;font-weight:600;border:0;border-radius:7px;background:transparent;color:var(--text-mid);cursor:pointer;}
+.day.sel{background:var(--green);color:var(--accent-ink);}
+.day-presets{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.day-preset{min-height:36px;padding:6px 11px;font-size:12.5px;color:var(--text-mid);background:var(--bg);border:1px solid var(--border);border-radius:99px;cursor:pointer;}
+.day-preset:active{color:var(--text);border-color:var(--text-mid);}
+.toggle-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-top:12px;border-top:1px solid var(--border);}
+.toggle-row .toggle-lbl{font-size:13px;font-weight:600;color:var(--text);}
+/* add entry = Hearth .btn.block with the plus icon (dashed means "empty / drop here", never an action) */
+.add-btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;min-height:46px;padding:12px;background:var(--btn);
+border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-weight:500;cursor:pointer;}
+.add-btn:active{background:var(--btn-hover);border-color:var(--text-mid);}
+.add-btn:disabled{opacity:.45;cursor:default;}
+/* save bar = Hearth .sheet-foot idiom: Clear all pushed left, Save (the one primary) right at natural width */
+.save-bar{display:flex;gap:8px;justify-content:flex-end;}
+.save-bar .btn{min-height:46px;font-size:14px;}
+.save-bar .btn:first-child{margin-right:auto;}
+#save-btn{min-width:140px;}
+#save-status{font-size:12.5px;color:var(--text-mid);text-align:center;min-height:1.4em;}
+#save-status.ok{color:var(--ok-ink);}
+#save-status.err{color:var(--red-ink);}

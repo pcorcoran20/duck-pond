@@ -1,0 +1,32 @@
+body{max-width:640px;margin:0 auto;padding-bottom:24px;}
+.hdr-title{flex:1 0 auto;}  /* the usage read-out ellipsises before the page title does */
+/* upload panel: eyebrow title, stacked field rows */
+.upload-title{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-mid);margin-bottom:12px;}
+.upload-row{display:flex;gap:8px;align-items:center;}
+.upload-row + .upload-row{margin-top:8px;}
+.path-lbl{font-size:12.5px;font-weight:500;color:var(--text-mid);width:40px;flex:none;}
+/* file input stays display:block (UA shadow layout; flex on the host is not portable to iOS Safari) */
+.file-inp{flex:1;display:block;line-height:30px;color:var(--text-mid);font-size:13px;padding:4px 6px;cursor:pointer;}
+.file-inp::file-selector-button{font:inherit;background:var(--bg2);border:1px solid var(--border);border-radius:7px;color:var(--text);
+font-size:12.5px;font-weight:500;padding:6px 10px;cursor:pointer;margin-right:10px;}
+.path-inp{flex:1;font-size:13px;font-family:var(--mono);}
+.upload-status{font-size:12.5px;color:var(--text-mid);margin-top:10px;min-height:1.4em;}
+/* file list: Hearth .pg-item rows; 30px/9 icon tile, mono name, mono-tabular size, 36x44 actions 8px apart */
+.tree{font-size:13px;}
+.dir-row{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:var(--radius-sm);min-height:44px;}
+.dir-row + .dir-row{margin-top:2px;}
+.dir-row:hover{background:var(--bg);}
+.indent{display:inline-block;flex-shrink:0;}
+.dir-icon,.file-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:30px;height:30px;border-radius:9px;background:var(--bg);}
+.dir-icon{color:var(--green);}
+.file-icon{color:var(--text-mid);}
+.dir-icon svg.i,.file-icon svg.i{width:16px;height:16px;}
+.dir-name{color:var(--text);font-weight:600;font-family:var(--mono);font-size:12.5px;}
+.file-name{color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:12.5px;}
+.file-size{color:var(--text-mid);font-family:var(--mono);font-size:11px;flex-shrink:0;font-variant-numeric:tabular-nums;}
+.file-actions{display:flex;gap:8px;flex-shrink:0;}
+.act-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:36px;min-width:44px;padding:6px 9px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg2);
+color:var(--text-mid);font-size:12px;font-weight:500;cursor:pointer;text-decoration:none;font-family:var(--font);}
+.act-btn svg.i{width:15px;height:15px;}
+.act-btn:active{color:var(--text);border-color:var(--text-mid);}
+.act-btn.del{color:var(--red);}
