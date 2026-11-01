@@ -128,7 +128,6 @@ class IrrigotoComponent : public Component, public api::CustomAPIDevice {
   // Entity setters (called from code-gen)
   void set_pressure_sensor(sensor::Sensor *s)             { pressure_sensor_  = s; }
   void set_battery_sensor(sensor::Sensor *s)              { battery_sensor_   = s; }
-  void set_charge_sensor(sensor::Sensor *s)               { charge_sensor_    = s; }
   void set_throw_sensor(sensor::Sensor *s)                { throw_sensor_     = s; }
   void set_water_minutes_remaining_sensor(sensor::Sensor *s) { water_remaining_sensor_ = s; }
   void set_watering_sensor(binary_sensor::BinarySensor *s){ watering_sensor_  = s; }
@@ -164,7 +163,6 @@ class IrrigotoComponent : public Component, public api::CustomAPIDevice {
 
   sensor::Sensor              *pressure_sensor_{nullptr};
   sensor::Sensor              *battery_sensor_{nullptr};
-  sensor::Sensor              *charge_sensor_{nullptr};
   sensor::Sensor              *throw_sensor_{nullptr};
   sensor::Sensor              *water_remaining_sensor_{nullptr};
   binary_sensor::BinarySensor *watering_sensor_{nullptr};

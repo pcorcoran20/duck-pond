@@ -6951,6 +6951,98 @@ static bool  s_batt_start_blocked = false;
 static bool  s_batt_crit_fired = false;
 static TickType_t s_batt_refuse_log = 0;
 
+// ── Charging detector: battery-voltage slope ───────────────────────────────
+// Bench result 2026-10-31 on 43c89c: neither the TCA6408A red-LED bit (every
+// expander pin released to input, red lit by a wired charger, INPUT bit0 still
+// HIGH -- the two drivers OR at the LED, not at the pin) nor the GPIO39
+// "Charge" ADC (upstream: reads the INA4180 idle baseline; the real charge
+// telemetry is on GPIO38, not broken out) can see the charger. The battery can:
+// it rises on a charger and sags off one. Two slopes, because the unit
+// deep-sleeps after 5 idle minutes and RAM does not survive that:
+//   in-session  : filtered V every 30 s over a 5-min window (RAM)
+//   across sleep: last filtered V + epoch stored every 60 s in RTC memory,
+//                 compared once on the next wake after the filter settles
+// plus an absolute: >= CHG_FLOAT_V only happens while a charger holds the pack
+// in CV. Flat = keep the previous verdict (also RTC-persisted). Samples are
+// skipped during watering and for 60 s after (motor sag). Lag is minutes by
+// design: the HA entity answers "is it taking charge", not "is it plugged in
+// this second". Thresholds are above the filter's few-mV noise; tune from the
+// 'charging ... -> ...' log lines if a unit flaps.
+#define CHG_WIN_N          10            // 10 x 30 s = 5-min in-session window
+#define CHG_SAMPLE_S       30
+#define CHG_RTC_STORE_S    60
+#define CHG_RTC_MIN_GAP_S  600           // >= 10 min between RTC sample and now
+#define CHG_RTC_MAX_GAP_S  (24 * 3600)   // older than a day: don't compare
+#define CHG_RISE_MV        15.0f
+#define CHG_FALL_MV        10.0f
+#define CHG_FLOAT_V        4.17f
+#define CHG_SETTLE_TICKS   15            // 1 Hz ticks before trusting the filter after boot
+static RTC_DATA_ATTR float   s_chg_rtc_v     = 0.0f;
+static RTC_DATA_ATTR int64_t s_chg_rtc_epoch = 0;
+static RTC_DATA_ATTR int8_t  s_chg_verdict   = -1;   // -1 unknown, 0 not charging, 1 charging
+static float    s_chg_win[CHG_WIN_N];
+static int      s_chg_win_n = 0, s_chg_win_head = 0;
+static uint32_t s_chg_ticks = 0, s_chg_last_sample = 0, s_chg_last_store = 0;
+static uint32_t s_chg_after_water = 0;
+static bool     s_chg_rtc_compared = false;
+
+static void chg_set(int v, const char *why, float from_v, float to_v)
+{
+    if (v == s_chg_verdict) return;
+    ESP_LOGI(TAG, "charging %d -> %d (%s: %.3f -> %.3f V)", s_chg_verdict, v, why, from_v, to_v);
+    s_chg_verdict = (int8_t)v;
+}
+
+// Called at 1 Hz from batt_filter_tick() with the filtered pack voltage.
+static void charge_slope_tick(float v)
+{
+    s_chg_ticks++;
+    if (irrigoto_is_watering()) { s_chg_after_water = s_chg_ticks; s_chg_win_n = 0; return; }
+    if (s_chg_after_water && (s_chg_ticks - s_chg_after_water) < 60) return;
+    if (s_chg_ticks < CHG_SETTLE_TICKS) return;
+
+    if (v >= CHG_FLOAT_V) chg_set(1, "float", v, v);
+
+    if (!s_chg_rtc_compared) {                       // once per boot, before any store
+        s_chg_rtc_compared = true;
+        int64_t now = (int64_t)time(NULL);
+        if (s_chg_rtc_epoch > 1000000000LL && now > 1000000000LL && s_chg_rtc_v > 2.0f) {
+            int64_t gap = now - s_chg_rtc_epoch;
+            if (gap >= CHG_RTC_MIN_GAP_S && gap <= CHG_RTC_MAX_GAP_S) {
+                float d_mv = (v - s_chg_rtc_v) * 1000.0f;
+                if      (d_mv >=  CHG_RISE_MV) chg_set(1, "across-sleep", s_chg_rtc_v, v);
+                else if (d_mv <= -CHG_FALL_MV) chg_set(0, "across-sleep", s_chg_rtc_v, v);
+            }
+        }
+    }
+
+    if (s_chg_ticks - s_chg_last_sample >= CHG_SAMPLE_S) {
+        s_chg_last_sample = s_chg_ticks;
+        s_chg_win[s_chg_win_head] = v;
+        s_chg_win_head = (s_chg_win_head + 1) % CHG_WIN_N;
+        if (s_chg_win_n < CHG_WIN_N) s_chg_win_n++;
+        if (s_chg_win_n == CHG_WIN_N) {
+            float oldest = s_chg_win[s_chg_win_head];   // head now sits on the oldest sample
+            float d_mv = (v - oldest) * 1000.0f;
+            if      (d_mv >=  CHG_RISE_MV) chg_set(1, "in-session", oldest, v);
+            else if (d_mv <= -CHG_FALL_MV) chg_set(0, "in-session", oldest, v);
+        }
+    }
+
+    if (s_chg_ticks - s_chg_last_store >= CHG_RTC_STORE_S) {
+        s_chg_last_store = s_chg_ticks;
+        s_chg_rtc_v = v;
+        s_chg_rtc_epoch = (int64_t)time(NULL);
+    }
+}
+
+// 1 charging, 0 not, -1 unknown (nothing decided yet since the pack was last
+// power-cycled). Read by the HA binary_sensor poll and by /api/all.
+int irrigoto_charger_sense(void)
+{
+    return s_chg_verdict;
+}
+
 static void batt_filter_tick(void)
 {
     float v = irrigoto_get_battery_mv() / 1000.0f;
@@ -6964,6 +7056,7 @@ static void batt_filter_tick(void)
     s_bf_x2 = s_bf_x1; s_bf_x1 = v;
     s_bf_y2 = s_bf_y1; s_bf_y1 = y;
     s_batt_filt_v = y;
+    charge_slope_tick(y);
     if (!s_batt_start_blocked && y <= BATT_START_BLOCK_V) {
         s_batt_start_blocked = true;
         ESP_LOGW(TAG, "Battery %.3f V (filtered) <= %.2f V -- watering/calibration starts BLOCKED",
@@ -19363,40 +19456,18 @@ float irrigoto_get_throw_mm(void)
     return 0.0f;
 }
 
-// Charge-current sense: INA4180 channel on GPIO39 (ADC1_CH3), the same read
-// the self-test's phase_adc/phase_monitor make. Raw amplifier output in mV;
-// I(mA) = mV * 0.2 (gain 100, 50 mOhm shunt), with a zero-current offset of
-// ~142 mV measured by upstream (docs/oto_pin_summary.md). -1 when the sensor
-// rail is down, since the amplifier is unpowered then and would read ~0.
-//
-// History: until 2026-10-31 this read TCA6408A INPUT bit0 on the theory that
-// the BQ25504 status pin pulls the red-LED net low. Bench-tested false on
-// 43c89c: with every expander pin released to input and the red LED lit by a
-// wired charger, bit0 still read HIGH -- the charger and P0 OR at the LED,
-// not at the pin, so no expander read can see charging.
+// GPIO39 "Charge" ADC, raw INA4180 output in mV, exposed in /api/all as a
+// DIAGNOSTIC only. Upstream documents this channel as reading the amplifier's
+// idle baseline (~142 mV) -- the real charge telemetry is on GPIO38, which is
+// not broken out (docs/oto_pin_summary.md). Kept so that claim can be checked
+// on any unit: if plugged vs unplugged differ, it is worth a real sensor.
+// -1 when the sensor rail is down (amplifier unpowered).
 int irrigoto_get_charge_mv(void)
 {
     if (!s_sensor_rail) return -1;
     return (int)adc_mv(ADC_CH_CHARGE);
 }
 
-// Charging = charge current above a threshold, with hysteresis so a reading
-// hovering at the edge doesn't flap the HA entity. PROVISIONAL thresholds:
-// chosen from the ~142 mV zero-current offset plus margin, before any
-// plugged/unplugged reading from a real unit existed. Tune from
-// /api/all "charge_mv" (or the HA Charge Current sensor) once observed.
-// Returns 1 charging, 0 not charging, -1 unknown (rail off).
-#define CHARGE_ON_MV   220
-#define CHARGE_OFF_MV  180
-int irrigoto_charger_sense(void)
-{
-    static int s_charging = 0;
-    int mv = irrigoto_get_charge_mv();
-    if (mv < 0) return -1;
-    if (mv >= CHARGE_ON_MV)       s_charging = 1;
-    else if (mv <= CHARGE_OFF_MV) s_charging = 0;
-    return s_charging;
-}
 
 bool irrigoto_is_watering(void)
 {
