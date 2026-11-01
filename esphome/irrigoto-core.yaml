@@ -456,6 +456,19 @@ sensor:
         - or:
             - delta: 0.05      # 50 mV
             - throttle: 60s
+    # Charge current from the INA4180 on GPIO39 (solar or wired charger).
+    # Raw: the amplifier's zero-current offset is ~28 mA (142 mV), so idle
+    # reads ~28, not 0. Exposed mainly to tune the Charging threshold.
+    charge_ma:
+      name: "${friendly_name} Charge Current"
+      unit_of_measurement: mA
+      accuracy_decimals: 0
+      device_class: current
+      state_class: measurement
+      filters:
+        - or:
+            - delta: 5         # 5 mA
+            - throttle: 60s
     throw_mm:
       name: "${friendly_name} Throw Distance"
       unit_of_measurement: mm
@@ -498,7 +511,8 @@ binary_sensor:
     watering:
       name: "${friendly_name} Watering"
       device_class: running
-    # Charger / solar active, read from the TCA6408A input register (red-LED net).
+    # Charger / solar active: charge current above a (provisional) threshold,
+    # see irrigoto_charger_sense(). The TCA6408A red-LED bit can't see it.
     charging:
       name: "${friendly_name} Charging"
       device_class: battery_charging

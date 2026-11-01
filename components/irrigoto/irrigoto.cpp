@@ -156,6 +156,13 @@ void IrrigotoComponent::loop() {
         }
     }
 
+    // charge current: raw INA4180 output on GPIO39, published only while the
+    // sensor rail is up (the amplifier is unpowered otherwise). I = mV * 0.2.
+    if (!quiet && charge_sensor_ != nullptr) {
+        int mv = irrigoto_get_charge_mv();
+        if (mv >= 0) charge_sensor_->publish_state(mv * 0.2f);
+    }
+
     if (!quiet && throw_sensor_ != nullptr)
         throw_sensor_->publish_state(irrigoto_get_throw_mm());
 
@@ -183,8 +190,9 @@ void IrrigotoComponent::loop() {
         }
     }
 
-    // charging: one I2C byte every 10 s, only while the sensor rail is already
-    // up (irrigoto_charger_sense returns -1 otherwise, so this never wakes it).
+    // charging: derived from the charge-current ADC every 10 s, only while the
+    // sensor rail is already up (irrigoto_charger_sense returns -1 otherwise,
+    // so this never wakes it).
     if (charging_sensor_ != nullptr) {
         uint32_t now_ms = millis();
         if (now_ms - last_charging_poll_ms_ > 10000) {

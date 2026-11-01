@@ -16064,7 +16064,8 @@ static esp_err_t api_all_handler(httpd_req_t *req)
         "\"uart_log\":%s,\"uart_log_want\":%s,\"uart_log_compiled\":%s,"  // b512: console active / switch / ESPHome-UART
         "\"fault_hold_min\":%u,"                                          // b522: post-fault awake hold (0 = off)
         "\"device_name\":\"%s\","
-        "\"charging\":%d",
+        "\"charging\":%d,"
+        "\"charge_mv\":%d",
         FW_BUILD, wifi_get_rssi(), s_wifi_ip,
         hostname ? hostname : "",
         bat_mv,
@@ -16083,7 +16084,8 @@ static esp_err_t api_all_handler(httpd_req_t *req)
         (IRRIGOTO_UART_LOG_BAUD != 0) ? "true" : "false",
         (fault_hold_load_once(), (unsigned)s_fault_hold_min),
         s_device_name,
-        irrigoto_charger_sense());
+        irrigoto_charger_sense(),
+        irrigoto_get_charge_mv());
     if (n < 0) n = 0;
     if (n >= (int)sizeof(buf)) n = (int)sizeof(buf) - 1;   // b523: never send past buf
     httpd_resp_send_chunk(req, buf, n);
@@ -19361,19 +19363,39 @@ float irrigoto_get_throw_mm(void)
     return 0.0f;
 }
 
-// Charger sense (TCA6408A boards). The BQ25504 status pin and TCA P0 share the
-// red-LED net; while firmware has red released (P0 high) the charger alone
-// decides the net level, so the INPUT register bit0 reads LOW when charging.
-// Returns 1 charging, 0 not charging, -1 unknown (rail off, SX1502 board,
-// or firmware is currently driving red itself).
+// Charge-current sense: INA4180 channel on GPIO39 (ADC1_CH3), the same read
+// the self-test's phase_adc/phase_monitor make. Raw amplifier output in mV;
+// I(mA) = mV * 0.2 (gain 100, 50 mOhm shunt), with a zero-current offset of
+// ~142 mV measured by upstream (docs/oto_pin_summary.md). -1 when the sensor
+// rail is down, since the amplifier is unpowered then and would read ~0.
+//
+// History: until 2026-10-31 this read TCA6408A INPUT bit0 on the theory that
+// the BQ25504 status pin pulls the red-LED net low. Bench-tested false on
+// 43c89c: with every expander pin released to input and the red LED lit by a
+// wired charger, bit0 still read HIGH -- the charger and P0 OR at the LED,
+// not at the pin, so no expander read can see charging.
+int irrigoto_get_charge_mv(void)
+{
+    if (!s_sensor_rail) return -1;
+    return (int)adc_mv(ADC_CH_CHARGE);
+}
+
+// Charging = charge current above a threshold, with hysteresis so a reading
+// hovering at the edge doesn't flap the HA entity. PROVISIONAL thresholds:
+// chosen from the ~142 mV zero-current offset plus margin, before any
+// plugged/unplugged reading from a real unit existed. Tune from
+// /api/all "charge_mv" (or the HA Charge Current sensor) once observed.
+// Returns 1 charging, 0 not charging, -1 unknown (rail off).
+#define CHARGE_ON_MV   220
+#define CHARGE_OFF_MV  180
 int irrigoto_charger_sense(void)
 {
-    if (!s_sensor_rail || s_led_expander != LED_EXP_TCA6408A) return -1;
-    if (s_led_cur_val == LED_RED || s_led_cur_val == LED_YELLOW ||
-        s_led_cur_val == LED_PURPLE || s_led_cur_val == LED_WHITE) return -1;
-    uint8_t in = 0xFF;
-    if (i2c_bus_read_reg(ADDR_TCA6408A, 0x00 /* INPUT */, &in, 1) != ESP_OK) return -1;
-    return (in & 0x01) ? 0 : 1;
+    static int s_charging = 0;
+    int mv = irrigoto_get_charge_mv();
+    if (mv < 0) return -1;
+    if (mv >= CHARGE_ON_MV)       s_charging = 1;
+    else if (mv <= CHARGE_OFF_MV) s_charging = 0;
+    return s_charging;
 }
 
 bool irrigoto_is_watering(void)

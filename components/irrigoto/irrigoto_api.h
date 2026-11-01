@@ -42,7 +42,9 @@ float irrigoto_get_throw_mm(void);
 
 /** True while a watering run is active. */
 bool irrigoto_is_watering(void);
-/** 1 = charger/solar active, 0 = not, -1 = unknown (see irrigoto.c). */
+/** Charge-current amplifier output in mV (GPIO39 INA4180), -1 when the sensor rail is down. */
+int  irrigoto_get_charge_mv(void);
+/** 1 = charging (current above threshold), 0 = not, -1 = unknown (rail down). See irrigoto.c. */
 int  irrigoto_charger_sense(void);
 
 /** Estimated minutes remaining for the current watering run.

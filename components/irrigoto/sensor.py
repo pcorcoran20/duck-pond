@@ -13,6 +13,7 @@ DEPENDENCIES = ["irrigoto"]
 
 CONF_PRESSURE_PSI = "pressure_psi"
 CONF_BATTERY_MV   = "battery_mv"
+CONF_CHARGE_MA    = "charge_ma"
 CONF_THROW_MM     = "throw_mm"
 CONF_WATER_MINUTES_REMAINING = "water_minutes_remaining"
 
@@ -21,6 +22,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.GenerateID(): cv.use_id(IrrigotoComponent),
         cv.Optional(CONF_PRESSURE_PSI): sensor.sensor_schema(),
         cv.Optional(CONF_BATTERY_MV):   sensor.sensor_schema(),
+        cv.Optional(CONF_CHARGE_MA):    sensor.sensor_schema(),
         cv.Optional(CONF_THROW_MM):     sensor.sensor_schema(),
         cv.Optional(CONF_WATER_MINUTES_REMAINING): sensor.sensor_schema(),
     }
@@ -37,6 +39,10 @@ async def to_code(config):
     if bat_conf := config.get(CONF_BATTERY_MV):
         sens = await sensor.new_sensor(bat_conf)
         cg.add(hub.set_battery_sensor(sens))
+
+    if chg_conf := config.get(CONF_CHARGE_MA):
+        sens = await sensor.new_sensor(chg_conf)
+        cg.add(hub.set_charge_sensor(sens))
 
     if throw_conf := config.get(CONF_THROW_MM):
         sens = await sensor.new_sensor(throw_conf)
