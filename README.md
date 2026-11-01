@@ -1,3 +1,5 @@
+> **Origin.** Duck Pond began as a fork of [irrigoto](https://github.com/rob-farrellrobotics/irrigoto) by Rob Farrell (Apache License 2.0, see `LICENSE`) at build 541, and keeps that history. It is now developed independently; the text below is upstream's README and will be rewritten as the project diverges.
+
 # irrigoto
 
 ESP-IDF + ESPHome firmware for the OtO sprinkler. Provides zone-based
