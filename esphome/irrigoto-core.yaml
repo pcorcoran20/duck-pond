@@ -373,7 +373,15 @@ ota:
 # the reconnect storm time to settle before we mark the image valid,
 # so a single LWIP hiccup just reboots into the same firmware instead
 # of unwinding the deploy.
+#
+# b542: the low-battery boot gate (check_battery_on_boot in irrigoto.c)
+# can deep-sleep ~1 s into a boot, long before this window closes. On the
+# first boot of a freshly OTA'd image that left the image PENDING_VERIFY,
+# and the bootloader rolled it back on the hourly re-check wake. The gate
+# now promotes a pending image itself before sleeping, and uses the id
+# below to clear safe_mode's boot-loop counter on that path.
 safe_mode:
+  id: irr_safe_mode
   boot_is_good_after: 30s
 
 # WiFi — ESPHome manages connection and reconnect.
@@ -423,6 +431,7 @@ deep_sleep:
 irrigoto:
   id: irrigoto_hw
   deep_sleep_id: irr_sleep
+  safe_mode_id: irr_safe_mode   # b542: boot-loop counter clear from the low-battery gate
 
 # ─── Home Assistant entities ──────────────────────────────────────────────────
 

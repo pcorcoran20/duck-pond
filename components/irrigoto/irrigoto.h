@@ -26,6 +26,7 @@
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/select/select.h"
 #include "esphome/components/deep_sleep/deep_sleep_component.h"
+#include "esphome/components/safe_mode/safe_mode.h"   // b542
 #include "esphome/components/api/custom_api_device.h"
 #include <string>
 #include <vector>
@@ -141,6 +142,11 @@ class IrrigotoComponent : public Component, public api::CustomAPIDevice {
   // requests fall back to a direct esp_deep_sleep_start() and HA will see
   // an unannounced disconnect.
   void set_deep_sleep(deep_sleep::DeepSleepComponent *ds) { deep_sleep_ = ds; }
+  // b542: optional link to ESPHome's safe_mode component so the C-side
+  // low-battery boot gate can clear the boot-loop counter before it
+  // deep-sleeps directly (bypassing ESPHome's shutdown hooks). If unset,
+  // the bridge still syncs preferences and the counter is left as is.
+  void set_safe_mode(safe_mode::SafeModeComponent *sm);
 
  protected:
   static constexpr uint32_t PUBLISH_INTERVAL_MS = 2000;

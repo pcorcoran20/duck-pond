@@ -4,6 +4,7 @@
 #include "esphome/core/application.h"
 #include "esphome/components/wifi/wifi_component.h"   // b293
 #include "esphome/components/logger/logger.h"          // b512: UART console hook
+#include "esphome/core/preferences.h"                  // b542: global_preferences->sync()
 #include <cstring>
 #include <cstdio>
 #include <ctime>
@@ -14,6 +15,12 @@ namespace esphome {
 namespace irrigoto {
 
 static const char *TAG = "irrigoto";
+
+// b542: held at file scope (not as a member) so the extern "C" bridge at
+// the bottom of this file can reach it from the C boot gate.
+static safe_mode::SafeModeComponent *s_safe_mode = nullptr;
+
+void IrrigotoComponent::set_safe_mode(safe_mode::SafeModeComponent *sm) { s_safe_mode = sm; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IrrigotoComponent — lifecycle
@@ -778,6 +785,31 @@ extern "C" void irrigoto_wifi_disable_component(void) {
 extern "C" void irrigoto_wifi_enable_component(void) {
     if (esphome::wifi::global_wifi_component != nullptr) {
         esphome::wifi::global_wifi_component->enable();
+    }
+}
+
+// b542: C-callable bridge to ESPHome's safe_mode boot-loop counter, for the
+// low-battery boot gate (sleep_forever_quiet in irrigoto.c). safe_mode
+// increments its "unsuccessful boot" counter in should_enter_safe_mode()
+// before App.setup() and clears it either from loop() after
+// boot_is_good_after (30 s) or from on_safe_shutdown() when a sleep goes
+// through ESPHome's deep_sleep / run_safe_shutdown_hooks(). The gate
+// deep-sleeps directly from setup() ~1 s in, so neither clear runs. On the
+// ESP32 the preference write is deferred (flushed on the next
+// flash_write_interval or at shutdown), so whether the increment even
+// lands depends on timing; rather than reason about that, clear the
+// counter and sync() so the result is deterministic: a deliberate
+// low-battery sleep never counts toward the num_attempts (10) safe-mode
+// trip, which would otherwise park a flat unit on WiFi for enable_time.
+extern "C" void irrigoto_safe_mode_boot_ok(void) {
+    if (esphome::irrigoto::s_safe_mode != nullptr) {
+        esphome::irrigoto::s_safe_mode->clean_rtc();
+    } else {
+        ESP_LOGW("irrigoto", "safe_mode not linked (irrigoto: safe_mode_id); "
+                             "boot-loop counter left as is");
+    }
+    if (esphome::global_preferences != nullptr) {
+        esphome::global_preferences->sync();
     }
 }
 

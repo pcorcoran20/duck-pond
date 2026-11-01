@@ -6393,6 +6393,7 @@ void irrigoto_enter_winter_sleep(const char *reason)
 #define BOOT_DIAG_FLAG_BATT_SKIPPED_VALVE  0x04
 #define BOOT_DIAG_FLAG_BATT_TOO_LOW        0x08
 #define BOOT_DIAG_FLAG_SENSOR_READ_FAILED  0x10
+#define BOOT_DIAG_FLAG_OTA_VALID_EARLY     0x20  // b542: image marked valid early (low-battery gate)
 
 typedef struct {
     uint32_t boot_seq;                 // monotonic across boots
@@ -6680,6 +6681,57 @@ static const char *boot_diag_reset_reason_str(int r)
     }
 }
 
+// b542: OTA rollback vs. the low-battery boot gate.
+//
+// ESPHome builds with IDF app rollback (CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE).
+// A freshly OTA'd image boots in ESP_OTA_IMG_PENDING_VERIFY and is only
+// promoted to VALID by ESPHome's safe_mode component from loop(), once
+// boot_is_good_after (30 s, esphome/irrigoto-core.yaml) has elapsed. If the
+// image is still PENDING_VERIFY when the bootloader next runs, the
+// bootloader marks it ABORTED and boots the previous image -- that is the
+// mechanism behind the b325/b328/b506-b510 rollbacks recorded in the YAML.
+//
+// check_battery_on_boot() runs from setup() about 1 s into the boot and,
+// on a low pack, deep-sleeps straight away via sleep_forever_quiet(). The
+// 30 s mark never arrives, so the FIRST boot of any new image on a low pack
+// leaves it PENDING_VERIFY; the hourly re-check wake is a bootloader run,
+// which flips it to ABORTED and silently discards the new firmware. The
+// unit then spends hours in quiet-sleep re-checks on the OLD image with no
+// WiFi, and nothing in HA says why (seen 2026-10-31 after the c324bb7
+// flash). A deliberate low-battery sleep is not a failed boot, so promote
+// the image ourselves before the gate can sleep. Guarded on PENDING_VERIFY:
+// on an already-valid image (every ordinary boot) this is a no-op, and the
+// normal 30 s safe_mode promotion stays in charge of every boot that gets
+// past the gate. Trade-off, stated plainly: a new image whose battery
+// reading is itself broken (always "low") would promote itself and keep
+// re-sleeping instead of rolling back -- recovery is a serial flash. The
+// ADC path is long-stable, so that is accepted over losing every OTA that
+// happens to land on a low pack.
+static void ota_mark_valid_early_for_lowbatt_gate(boot_diag_t *diag)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+    if (running == NULL) return;
+    if (esp_ota_get_state_partition(running, &state) != ESP_OK) return;
+    if (state != ESP_OTA_IMG_PENDING_VERIFY) return;
+
+    esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+    if (err == ESP_OK) {
+        ESP_LOGW(TAG, "OTA image marked valid early (low-battery gate): %s still "
+                      "PENDING_VERIFY at the gate; the quiet sleep would have "
+                      "rolled it back", running->label);
+        if (diag) diag->flags |= BOOT_DIAG_FLAG_OTA_VALID_EARLY;
+    } else {
+        ESP_LOGE(TAG, "esp_ota_mark_app_valid_cancel_rollback failed: %s -- "
+                      "image %s may roll back on the next wake",
+                 esp_err_to_name(err), running->label);
+    }
+}
+
+#ifdef ESPHOME_COMPONENT
+extern void irrigoto_safe_mode_boot_ok(void);  // b542: bridge from irrigoto.cpp
+#endif
+
 // b327: Quiet variant of sleep_forever -- no motor activity. Used when
 // boot-time battery is critically low: powering the motor rail and driving
 // the valve under low battery can brown out the regulator and make things
@@ -6701,6 +6753,14 @@ static void sleep_forever_quiet(const char *reason)
     // 3.39 V on the charger. A re-check is ~1.5 s awake (a few hundredths of
     // a mAh), far below what solar puts back in an hour.
     s_lowbatt_hold = true;
+#ifdef ESPHOME_COMPONENT
+    // b542: this direct esp_deep_sleep_start() skips ESPHome's shutdown
+    // hooks, so safe_mode's boot-loop counter (incremented before setup(),
+    // normally cleared 30 s in or by on_safe_shutdown()) is never reset on
+    // this path. Tell safe_mode this boot ended on purpose and flush the
+    // preference so the clear actually reaches NVS before we sleep.
+    irrigoto_safe_mode_boot_ok();
+#endif
     esp_sleep_enable_timer_wakeup((uint64_t)LOWBATT_RECHECK_S * 1000000ULL);
     esp_deep_sleep_start();
 }
@@ -6854,6 +6914,12 @@ static void check_battery_on_boot(void)
         // battery, but we CAN persist the fault + suspect flag so HA and the
         // fault log scream about it instead of the yard silently flooding.
         valve_verify_closed_dry("boot batt-too-low", false);
+        // b542: a just-OTA'd image is still PENDING_VERIFY this early in the
+        // boot; sleeping now would let the bootloader roll it back on the
+        // hourly re-check. Promote it first (no-op unless pending). See the
+        // comment above ota_mark_valid_early_for_lowbatt_gate(). This is
+        // flash bookkeeping only -- still no motor activity on a low pack.
+        ota_mark_valid_early_for_lowbatt_gate(&diag);
         boot_diag_append_and_save(&diag);
         sleep_forever_quiet("low battery");
     }
@@ -16364,6 +16430,7 @@ static esp_err_t api_boot_diag_handler(httpd_req_t *req)
               "\"batt_skipped_valve\":%s,"
               "\"batt_too_low\":%s,"
               "\"sensor_read_failed\":%s,"
+              "\"ota_valid_early\":%s,"
               "\"batt_v_at_boot\":%.3f,"
               "\"batt_v_after_close\":%.3f,"
               "\"valve_deg_at_boot\":%.2f,"
@@ -16382,6 +16449,7 @@ static esp_err_t api_boot_diag_handler(httpd_req_t *req)
             (e->flags & BOOT_DIAG_FLAG_BATT_SKIPPED_VALVE) ? "true" : "false",
             (e->flags & BOOT_DIAG_FLAG_BATT_TOO_LOW)       ? "true" : "false",
             (e->flags & BOOT_DIAG_FLAG_SENSOR_READ_FAILED) ? "true" : "false",
+            (e->flags & BOOT_DIAG_FLAG_OTA_VALID_EARLY)    ? "true" : "false",
             e->batt_v_at_boot,
             e->batt_v_after_close,
             e->valve_deg_at_boot,
@@ -22784,10 +22852,13 @@ void irrigoto_boot_diag_summary(char *buf, size_t len)
     // (close-attempted? close-ok? big valve err?) are visible without
     // scrolling past low-priority context.
     if (e->flags & BOOT_DIAG_FLAG_BATT_TOO_LOW) {
+        // b542: say when the gate had to promote a pending OTA image itself.
         snprintf(buf, len,
-                 "b%u #%u %s batt=%.2fV LOW -> quiet sleep",
+                 "b%u #%u %s batt=%.2fV LOW -> quiet sleep%s",
                  (unsigned)e->fw_build, (unsigned)e->boot_seq,
-                 rstr, e->batt_v_at_boot);
+                 rstr, e->batt_v_at_boot,
+                 (e->flags & BOOT_DIAG_FLAG_OTA_VALID_EARLY)
+                     ? " (OTA image marked valid early)" : "");
         return;
     }
     if (e->flags & BOOT_DIAG_FLAG_SENSOR_READ_FAILED) {

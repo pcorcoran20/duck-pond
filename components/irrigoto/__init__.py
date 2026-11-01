@@ -11,9 +11,11 @@ import esphome.config_validation as cv
 from esphome.const import CONF_ID
 from esphome.components.esp32 import add_idf_component, include_builtin_idf_component
 from esphome.components.deep_sleep import DeepSleepComponent
+from esphome.components.safe_mode import SafeModeComponent   # b542
 from esphome.components.logger import request_log_listener   # b512
 
 CONF_DEEP_SLEEP_ID = "deep_sleep_id"
+CONF_SAFE_MODE_ID = "safe_mode_id"   # b542
 
 # HTML fragment "headers" (*_html.h) sit at the component ROOT so
 # ESPHome's standard source copy ships them into the build tree next to
@@ -51,6 +53,11 @@ CONFIG_SCHEMA = cv.Schema(
         # all sleep requests from irrigoto.c are routed through it so HA
         # gets a graceful "going to sleep" notification.
         cv.Optional(CONF_DEEP_SLEEP_ID): cv.use_id(DeepSleepComponent),
+        # b542: optional link to ESPHome's safe_mode component so the
+        # low-battery boot gate can clear the boot-loop counter before it
+        # deep-sleeps directly (that path never reaches ESPHome's shutdown
+        # hooks). Without it the counter is left untouched on that path.
+        cv.Optional(CONF_SAFE_MODE_ID): cv.use_id(SafeModeComponent),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -81,3 +88,7 @@ async def to_code(config):
     if (ds_id := config.get(CONF_DEEP_SLEEP_ID)) is not None:
         ds = await cg.get_variable(ds_id)
         cg.add(var.set_deep_sleep(ds))
+
+    if (sm_id := config.get(CONF_SAFE_MODE_ID)) is not None:
+        sm = await cg.get_variable(sm_id)
+        cg.add(var.set_safe_mode(sm))
