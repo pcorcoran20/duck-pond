@@ -15,8 +15,11 @@ from pathlib import Path
 
 # Re-exec under the sibling venv (where setup.sh installed esphome) when run
 # with some other interpreter, e.g. ./otaup.py under the system python3.
-_VENV_PY = Path(__file__).resolve().parent / "venv" / "bin" / "python"
-if _VENV_PY.is_file() and Path(sys.executable).resolve() != _VENV_PY.resolve():
+_VENV = Path(__file__).resolve().parent / "venv"
+_VENV_PY = _VENV / "bin" / "python"
+# sys.prefix is the venv dir when running inside it; comparing executables
+# does not work because venv/bin/python is a symlink to the real interpreter.
+if _VENV_PY.is_file() and Path(sys.prefix).resolve() != _VENV.resolve():
     os.execv(str(_VENV_PY), [str(_VENV_PY), str(Path(__file__).resolve()), *sys.argv[1:]])
 
 
