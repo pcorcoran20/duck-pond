@@ -19311,7 +19311,7 @@ static void zone_web_start(void)
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
     cfg.server_port      = ZONE_WEB_PORT;
     cfg.ctrl_port        = ZONE_WEB_CTRL_PORT;
-    cfg.max_uri_handlers  = 79;  // b543: 77 -> 79 (/wifi/scan GET, /wifi/save POST); b530: 76 -> 77 (/api/led GET); b525: 74 -> 76 (/api/winter GET+POST); b522: 72 -> 74 (/api/fault_hold GET+POST); b512: 70 -> 72 (/api/uart_log GET+POST); b489: 68 -> 70, keeping the 2-slot margin over
+    cfg.max_uri_handlers  = 80;  // b543: 79 -> 80 (/api/log GET); b543: 77 -> 79 (/wifi/scan GET, /wifi/save POST); b530: 76 -> 77 (/api/led GET); b525: 74 -> 76 (/api/winter GET+POST); b522: 72 -> 74 (/api/fault_hold GET+POST); b512: 70 -> 72 (/api/uart_log GET+POST); b489: 68 -> 70, keeping the 2-slot margin over
                                  // the _Static_assert below.
                                  // MUST be set before httpd_start (cfg is copied there);
                                  // headroom over uris[] count -- _Static_assert below guards it.
@@ -19410,7 +19410,7 @@ static void zone_web_start(void)
         {.uri="/fs/upload",             .method=HTTP_POST, .handler=fs_upload_handler},
         {.uri="/fs/delete",             .method=HTTP_POST, .handler=fs_delete_handler},
     };
-    _Static_assert(sizeof(uris)/sizeof(uris[0]) <= 77,   // b543: 75 -> 77 (/wifi/scan GET, /wifi/save POST); b530: 74 -> 75 (/api/led GET); b525: 72 -> 74 (/api/winter GET+POST); b522: 70 -> 72 (/api/fault_hold GET+POST); b512: 68 -> 70 (/api/uart_log GET+POST); b489: 66 -> 68
+    _Static_assert(sizeof(uris)/sizeof(uris[0]) <= 78,   // b543: 77 -> 78 (/api/log GET); b543: 75 -> 77 (/wifi/scan GET, /wifi/save POST); b530: 74 -> 75 (/api/led GET); b525: 72 -> 74 (/api/winter GET+POST); b522: 70 -> 72 (/api/fault_hold GET+POST); b512: 68 -> 70 (/api/uart_log GET+POST); b489: 66 -> 68
                    "uris[] exceeds cfg.max_uri_handlers -- raise it before httpd_start");
     for (size_t i = 0; i < sizeof(uris)/sizeof(uris[0]); i++)
         httpd_register_uri_handler(s_zone_server, &uris[i]);
