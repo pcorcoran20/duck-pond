@@ -59,3 +59,7 @@ Documents/
 # oto_factory_43c89c.bin). Never commit: they carry that unit's own
 # calibration blob and WiFi config, and they'd bloat the repo.
 *.bin
+
+# laptop diagnostic toolkit: venv and captured logs stay local
+patrick/tools/otolog/venv/
+patrick/tools/otolog/*.log
