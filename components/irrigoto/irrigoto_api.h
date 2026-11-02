@@ -80,6 +80,8 @@ int irrigoto_get_mode(void);
 void irrigoto_get_status(char *buf, size_t len);
 // b512: deferred, non-blocking UART console (see irrigoto.c uart_console_*).
 void irrigoto_uart_console_write(const char *msg, size_t len);
+// b544: RAM log ring served by GET /api/log (see irrigoto.c log_ring_*).
+void irrigoto_log_ring_push(const char *msg, size_t len);
 
 /**
  * Name of the currently selected zone (from NVS config), e.g. "Front lawn".
@@ -589,6 +591,16 @@ bool irrigoto_sleep_request_pending(uint32_t *duration_s_out);
 
 /** Clear the pending sleep request (called after begin_sleep is invoked). */
 void irrigoto_sleep_request_clear(void);
+
+/**
+ * b543: WiFi provisioning from the web UI. POST /wifi/save stages an
+ * SSID/password pair; the ESPHome component polls this each loop iteration
+ * and, when it returns true, hands the pair to WiFiComponent::save_wifi_sta()
+ * on the main loop. One-shot: the staged pair is cleared (and the password
+ * wiped) on the call that returns it.
+ */
+bool irrigoto_wifi_save_take(char *ssid, size_t ssid_len,
+                             char *password, size_t password_len);
 
 #ifdef __cplusplus
 }

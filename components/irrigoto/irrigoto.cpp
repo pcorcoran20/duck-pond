@@ -22,6 +22,46 @@ static safe_mode::SafeModeComponent *s_safe_mode = nullptr;
 
 void IrrigotoComponent::set_safe_mode(safe_mode::SafeModeComponent *sm) { s_safe_mode = sm; }
 
+// b543: apply WiFi credentials entered on the landing page's WiFi card.
+// ESPHome's captive portal never answers on the "<name> Fallback" hotspot:
+// its web server binds :80 when the AP comes up, irrigoto's httpd binds :80
+// again from irrigoto_init() (AFTER_WIFI), and with lwIP's SO_REUSE the later
+// listener gets every connection -- so a phone on the hotspot lands on the
+// landing page, which until now had no way to enter credentials (seen on
+// hardware 2026-11-01). save_wifi_sta() stores the pair in the wifi
+// preference (keyed to the config version hash, so a later build with a
+// changed config falls back to the compiled secrets), replaces the station
+// list and calls connect_soon_(). With the fallback AP running alongside the
+// station (APSTA on the ESP32) the connect cycle picks the new network up on
+// its next pass; the AP goes down when the station connects.
+//
+// After /wifi/ap_mode (b396) the station list is empty and WiFiComponent is
+// parked in its AP state, where connect_soon_() is a no-op: set the station
+// and re-run start() first so the connect cycle begins (start() also
+// re-derives the preference key for a configured station), then
+// save_wifi_sta() writes the preference under that key.
+//
+// Main-loop only: called from loop(), never from the httpd task (the captive
+// portal defers its own save_wifi_sta() to the main loop for the same reason).
+static void apply_wifi_credentials(const char *ssid, const char *password) {
+    auto *w = esphome::wifi::global_wifi_component;
+    if (w == nullptr) {
+        ESP_LOGW(TAG, "WiFi save: no wifi component");
+        return;
+    }
+    bool had_sta = w->has_sta();
+    ESP_LOGI(TAG, "WiFi save from web UI: SSID='%s' (station %s)", ssid,
+             had_sta ? "configured" : "cleared");
+    if (!had_sta) {
+        esphome::wifi::WiFiAP sta;
+        sta.set_ssid(ssid);
+        sta.set_password(password);
+        w->set_sta(sta);
+        w->start();
+    }
+    w->save_wifi_sta(ssid, password);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // IrrigotoComponent — lifecycle
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,6 +76,7 @@ void IrrigotoComponent::setup() {
     if (esphome::logger::global_logger != nullptr) {
         esphome::logger::global_logger->add_log_callback(
             this, [](void *, uint8_t, const char *, const char *msg, size_t len) {
+                irrigoto_log_ring_push(msg, len);      // b544: always
                 irrigoto_uart_console_write(msg, len);
             });
     }
@@ -108,6 +149,17 @@ void IrrigotoComponent::loop() {
                  "sleeping directly (HA disconnect will be unannounced)");
         esp_sleep_enable_timer_wakeup((uint64_t)sleep_dur_s * 1000000ULL);
         esp_deep_sleep_start();
+    }
+
+    // b543: WiFi credentials staged by POST /wifi/save (irrigoto.c, httpd
+    // task) are applied here on the main loop -- see apply_wifi_credentials.
+    // Polled every tick, not gated by the publish interval.
+    {
+        char ssid[33], password[65];
+        if (irrigoto_wifi_save_take(ssid, sizeof(ssid), password, sizeof(password))) {
+            apply_wifi_credentials(ssid, password);
+            memset(password, 0, sizeof(password));
+        }
     }
 
     uint32_t now = millis();
@@ -477,8 +529,9 @@ float IrrigotoComponent::get_nozzle_deg() {
 
 // b541: 5 rapid manual wakes -> the fallback hotspot comes up OPEN as
 // "<name> Setup". Only the AP config is swapped (before WiFi starts); the STA
-// list is left alone so the captive portal saves new credentials under the
-// normal preference key and they survive reboots. Fallback timing (ap_timeout)
+// list is left alone so the landing page's WiFi card (b543) saves new
+// credentials under the normal preference key and they survive reboots.
+// Fallback timing (ap_timeout)
 // and the b540 setup window are unchanged.
 void IrrigotoComponent::boot_press_check() {
     if (!irrigoto_boot_press_check()) return;
@@ -826,4 +879,107 @@ extern "C" void irrigoto_wifi_ap_mode(void) {
         w->clear_sta();
         w->start();
     }
+}
+
+// b543: GET /wifi/scan (irrigoto.c) -> the networks WiFiComponent saw on its
+// last scan, as {"aps":[{"ssid":"..","rssi":-60,"lock":1},..]}, strongest
+// first. No scan is started here: with a station configured the component
+// keeps scanning on its own connect cycle while the fallback AP is up, and
+// start_scanning() from outside would hijack its state machine. This is the
+// same list the captive portal's /config.json reads. Called from the httpd
+// task, so the entries are copied out under ScanResultsLock (bounded work
+// only; the lock is compiled in by request_wifi_scan_results_lock() in
+// __init__.py) and the JSON is formatted after it is released. Hidden-SSID
+// entries are dropped and the BSSIDs of one network collapse to the
+// strongest. Returns the JSON length written to buf (always valid JSON;
+// entries that do not fit are left out).
+namespace {
+struct ScanEntry {
+    char   ssid[33];
+    int8_t rssi;
+    bool   auth;
+};
+// Append s JSON-escaped at buf[pos]; returns the new pos, or lim when it
+// would not fit (the caller then drops the whole entry).
+size_t json_append_escaped(char *buf, size_t lim, size_t pos, const char *s) {
+    for (const unsigned char *p = reinterpret_cast<const unsigned char *>(s); *p != 0; p++) {
+        char tmp[8];
+        int n;
+        if (*p == '"' || *p == '\\') {
+            n = snprintf(tmp, sizeof(tmp), "\\%c", *p);
+        } else if (*p < 0x20) {
+            n = snprintf(tmp, sizeof(tmp), "\\u%04x", *p);
+        } else {
+            tmp[0] = static_cast<char>(*p);
+            n = 1;
+        }
+        if (n < 0 || pos + static_cast<size_t>(n) >= lim) return lim;
+        memcpy(buf + pos, tmp, static_cast<size_t>(n));
+        pos += static_cast<size_t>(n);
+    }
+    return pos;
+}
+}  // namespace
+
+extern "C" int irrigoto_wifi_scan_json(char *buf, size_t len) {
+    if (buf == nullptr || len < 16) return 0;
+    static constexpr size_t MAX_APS = 20;
+    ScanEntry aps[MAX_APS];
+    size_t count = 0;
+    auto *w = esphome::wifi::global_wifi_component;
+    if (w != nullptr) {
+        esphome::wifi::ScanResultsLock lock(w);
+        for (const auto &scan : w->get_scan_result()) {
+            if (scan.get_is_hidden()) continue;
+            esphome::StringRef ssid = scan.get_ssid();
+            size_t n = ssid.size();
+            if (n == 0) continue;
+            if (n > 32) n = 32;
+            bool seen = false;
+            for (size_t i = 0; i < count; i++) {
+                if (strlen(aps[i].ssid) == n && memcmp(aps[i].ssid, ssid.c_str(), n) == 0) {
+                    if (scan.get_rssi() > aps[i].rssi) {
+                        aps[i].rssi = scan.get_rssi();
+                        aps[i].auth = scan.get_with_auth();
+                    }
+                    seen = true;
+                    break;
+                }
+            }
+            if (seen || count >= MAX_APS) continue;
+            memcpy(aps[count].ssid, ssid.c_str(), n);
+            aps[count].ssid[n] = '\0';
+            aps[count].rssi = scan.get_rssi();
+            aps[count].auth = scan.get_with_auth();
+            count++;
+        }
+    }
+    // Strongest first (insertion sort; count <= MAX_APS).
+    for (size_t i = 1; i < count; i++) {
+        ScanEntry key = aps[i];
+        size_t j = i;
+        while (j > 0 && aps[j - 1].rssi < key.rssi) {
+            aps[j] = aps[j - 1];
+            j--;
+        }
+        aps[j] = key;
+    }
+    const size_t lim = len - 3;   // always leave room for the closing "]}"
+    int n = snprintf(buf, lim, "{\"aps\":[");
+    size_t pos = static_cast<size_t>(n);
+    for (size_t i = 0; i < count; i++) {
+        size_t start = pos;
+        n = snprintf(buf + pos, lim - pos, "%s{\"ssid\":\"", i ? "," : "");
+        if (n < 0 || pos + static_cast<size_t>(n) >= lim) { pos = start; break; }
+        pos += static_cast<size_t>(n);
+        pos = json_append_escaped(buf, lim, pos, aps[i].ssid);
+        if (pos >= lim) { pos = start; break; }
+        n = snprintf(buf + pos, lim - pos, "\",\"rssi\":%d,\"lock\":%d}",
+                     static_cast<int>(aps[i].rssi), aps[i].auth ? 1 : 0);
+        if (n < 0 || pos + static_cast<size_t>(n) >= lim) { pos = start; break; }
+        pos += static_cast<size_t>(n);
+    }
+    n = snprintf(buf + pos, len - pos, "]}");
+    pos += static_cast<size_t>(n);
+    return static_cast<int>(pos);
 }

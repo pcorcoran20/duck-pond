@@ -13,6 +13,7 @@ from esphome.components.esp32 import add_idf_component, include_builtin_idf_comp
 from esphome.components.deep_sleep import DeepSleepComponent
 from esphome.components.safe_mode import SafeModeComponent   # b542
 from esphome.components.logger import request_log_listener   # b512
+from esphome.components import wifi                           # b543
 
 CONF_DEEP_SLEEP_ID = "deep_sleep_id"
 CONF_SAFE_MODE_ID = "safe_mode_id"   # b542
@@ -36,7 +37,9 @@ CONF_SAFE_MODE_ID = "safe_mode_id"   # b542
 # mechanism that works across ESPHome versions.
 
 CODEOWNERS = ["@rob-farrellrobotics"]
-DEPENDENCIES = []
+# b543: irrigoto.cpp reaches wifi::global_wifi_component directly (AP mode,
+# provisioning, scan list), so the wifi component is a hard dependency.
+DEPENDENCIES = ["wifi"]
 AUTO_LOAD = []
 
 # Declare the C++ namespace and class that ESPHome will instantiate
@@ -77,6 +80,13 @@ async def to_code(config):
     # b512: irrigoto owns a deferred, non-blocking UART console (ESPHome's
     # own UART logger stays off). Reserve a logger callback slot for it.
     request_log_listener()
+    # b543: GET /wifi/scan reads WiFiComponent's scan results from the httpd
+    # task, so ask wifi to compile in the lock that guards them (what the
+    # captive portal does); irrigoto.cpp holds wifi::ScanResultsLock while it
+    # copies the list. On a core without the helper the lock class is a no-op
+    # and the read is unguarded, as the captive portal's was before it existed.
+    if (req_lock := getattr(wifi, "request_wifi_scan_results_lock", None)) is not None:
+        req_lock()
     # Silence legacy I2C deprecation warnings (we use it intentionally).
     cg.add_build_flag("-Wno-deprecated-declarations")
     # NOTE: no -I flags here — see the *_html.h placement note at the

@@ -7237,8 +7237,9 @@ static bool post_cal_hold_active(void)
 // b541: physical escape hatch for a lost fallback-hotspot password.
 // Five power-on / wake-switch resets in a row, each less than PRESS_GAP_MS after
 // the previous boot, make the NEXT fallback hotspot an OPEN one named
-// "<name> Setup" (the station credentials are untouched, so WiFi entered in the
-// captive portal is saved under the normal key and survives reboots). Counted
+// "<name> Setup" (the station credentials are untouched, so WiFi entered on the
+// landing page's WiFi card (b543) is saved under the normal key and survives
+// reboots). Counted
 // from ESPHome's priority-800 on_boot hook -- before WiFi -- in NVS ("OtO" /
 // "rst_cnt"), because a power-on clears RTC memory. A boot that stays up
 // PRESS_GAP_MS clears the count; deep-sleep timer wakes clear it too. Only
@@ -7295,7 +7296,20 @@ static void boot_press_maintenance(void)
 // critical-battery sleep still overrides it. NB: in ESPHome mode
 // s_wifi_connected is seeded true at init, so ask the driver instead.
 #define SETUP_WINDOW_MS (5u * 60u * 1000u)
-static bool s_setup_window = false;
+static bool       s_setup_window = false;
+static TickType_t s_setup_window_until = 0;   // b543: tick the hold runs out at
+
+// b543: someone is using the landing page's WiFi card (GET /wifi/scan, POST
+// /wifi/save): (re)open the window for another SETUP_WINDOW_MS from now, so
+// a slow phone session does not end with the unit sleeping mid-entry. A timer
+// wake that fell back to the hotspot gets the window the same way, but only
+// once a client actually touches the card.
+static void setup_window_touch(void)
+{
+    s_setup_window       = true;
+    s_setup_window_until = xTaskGetTickCount() + pdMS_TO_TICKS(SETUP_WINDOW_MS);
+}
+
 static bool setup_window_hold(void)
 {
     if (!s_setup_window) return false;
@@ -7305,7 +7319,7 @@ static bool setup_window_hold(void)
         INFO("WiFi associated -- setup window closed, normal sleep rules");
         return false;
     }
-    if (xTaskGetTickCount() < pdMS_TO_TICKS(SETUP_WINDOW_MS)) return true;
+    if ((int32_t)(xTaskGetTickCount() - s_setup_window_until) < 0) return true;
     s_setup_window = false;
     ESP_LOGW(TAG, "No WiFi %u min after a manual wake -- setup window over, normal sleep rules",
              (unsigned)(SETUP_WINDOW_MS / 60000u));
@@ -16155,6 +16169,54 @@ static void uart_console_set(bool on, bool persist)
          on ? "ENABLED" : "disabled", persist ? " [persisted]" : "", UART_CONSOLE_DEFER_S);
 }
 
+
+// b544: RAM log ring. Every formatted ESPHome log line (the same hook that
+// feeds the UART console) is copied into an 8 KB ring so GET /api/log can
+// return the recent log over HTTP. Motivation (2026-11-01, 43c89c): a unit
+// stuck on its fallback hotspot is unreachable over the native API --
+// ESPHome's API server disconnects every client while the station is down
+// -- and the J2 UART needs a teardown, so the WiFi disconnect reasons were
+// invisible. Always on; the ring is wrapped, never allocated, never blocks.
+#define LOG_RING_SZ 8192
+static char     s_log_ring[LOG_RING_SZ];
+static uint32_t s_log_ring_head = 0;      // next write index (mod LOG_RING_SZ)
+static uint32_t s_log_ring_total = 0;     // bytes ever written (wrap detection)
+
+void irrigoto_log_ring_push(const char *msg, size_t len)
+{
+    if (!msg || len == 0) return;
+    if (len > LOG_RING_SZ / 2) { msg += len - LOG_RING_SZ / 2; len = LOG_RING_SZ / 2; }
+    for (size_t i = 0; i < len; i++) {
+        s_log_ring[s_log_ring_head] = msg[i];
+        s_log_ring_head = (s_log_ring_head + 1) % LOG_RING_SZ;
+    }
+    if (len == 0 || msg[len - 1] != '\n') {
+        s_log_ring[s_log_ring_head] = '\n';
+        s_log_ring_head = (s_log_ring_head + 1) % LOG_RING_SZ;
+        len++;
+    }
+    s_log_ring_total += (uint32_t)len;
+}
+
+// GET /api/log -> text/plain, oldest line first, at most LOG_RING_SZ bytes.
+// The first line may be a partial (the ring wrapped mid-line); harmless.
+static esp_err_t api_log_handler(httpd_req_t *req)
+{
+    HTTP_CONN_CLOSE(req);
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    uint32_t avail = s_log_ring_total < LOG_RING_SZ ? s_log_ring_total : LOG_RING_SZ;
+    uint32_t start = (s_log_ring_head + LOG_RING_SZ - avail) % LOG_RING_SZ;
+    if (avail == 0) { httpd_resp_sendstr(req, "(log ring empty)\n"); return ESP_OK; }
+    uint32_t first = LOG_RING_SZ - start;          // bytes before the physical end
+    if (first > avail) first = avail;
+    httpd_resp_send_chunk(req, s_log_ring + start, first);
+    if (avail > first) httpd_resp_send_chunk(req, s_log_ring, avail - first);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
 // Called from the ESPHome loop task for every log line. Must never block.
 void irrigoto_uart_console_write(const char *msg, size_t len)
 {
@@ -16196,8 +16258,18 @@ static esp_err_t api_all_handler(httpd_req_t *req)
     // pushed the head past 512; snprintf returned the would-be length and
     // send_chunk(buf, n) streamed past the buffer (garbage device_name, NUL
     // bytes, HA REST sensors unparseable on all three units for 25 min).
-    char buf[768]; int n;
+    // b543: 1024 (wifi_sta / wifi_ap added to the head).
+    char buf[1024]; int n;
     uint32_t bat_mv = (uint32_t)(adc_mv(ADC_CH_VBATT) * VBATT_DIVIDER_RATIO);
+    // b543: is the station associated, and is the fallback hotspot up? The
+    // landing page shows its WiFi (provisioning) card only while wifi_sta is
+    // false. Asked of the driver, not s_wifi_connected (seeded true at init
+    // in ESPHome mode -- see setup_window_hold).
+    wifi_ap_record_t _sta_ap;
+    bool wifi_sta = (esp_wifi_sta_get_ap_info(&_sta_ap) == ESP_OK);
+    wifi_mode_t _wm = WIFI_MODE_NULL;
+    esp_wifi_get_mode(&_wm);
+    bool wifi_ap = (_wm == WIFI_MODE_AP || _wm == WIFI_MODE_APSTA);
     // mDNS / WiFi-station hostname (ESPHome owns this in component mode;
     // standalone sets it in wifi_init). Distinct from the user-editable
     // s_device_name above.
@@ -16210,6 +16282,7 @@ static esp_err_t api_all_handler(httpd_req_t *req)
     irrigoto_get_last_sleep_reason(sleep_buf, sizeof(sleep_buf));
     n = snprintf(buf, sizeof(buf),
         "{\"fw_build\":%u,\"wifi_rssi\":%d,\"wifi_ip\":\"%s\","
+        "\"wifi_sta\":%s,\"wifi_ap\":%s,"   // b543: station associated / hotspot up
         "\"hostname\":\"%s\","
         "\"bat_mv\":%lu,"
         "\"storage_used_kb\":%u,\"storage_total_kb\":%u,"
@@ -16226,6 +16299,7 @@ static esp_err_t api_all_handler(httpd_req_t *req)
         "\"charging\":%d,"
         "\"charge_mv\":%d",
         FW_BUILD, wifi_get_rssi(), s_wifi_ip,
+        wifi_sta ? "true" : "false", wifi_ap ? "true" : "false",
         hostname ? hostname : "",
         bat_mv,
         (unsigned)(used/1024),(unsigned)(total/1024),
@@ -17977,6 +18051,126 @@ static esp_err_t wifi_reconnect_handler(httpd_req_t *req)
     return ESP_OK;  // not reached
 }
 
+// b543: WiFi provisioning from this web UI. ESPHome's captive portal never
+// answers on the "<name> Fallback" hotspot: it binds :80 when the AP comes up,
+// this httpd binds :80 again from irrigoto_init() (AFTER_WIFI), and with lwIP's
+// SO_REUSE the later listener gets every connection -- so a phone on the
+// hotspot lands on the landing page, which had no way to enter credentials
+// (seen on hardware 2026-11-01). The landing page's WiFi card now does that
+// through these two routes; captive_portal stays in the config for its DNS
+// redirect (the phone's "sign in to network" sheet opens on the landing page).
+//   GET  /wifi/scan   -> {"aps":[{"ssid","rssi","lock"},..]} from
+//                        WiFiComponent's last scan (irrigoto_wifi_scan_json)
+//   POST /wifi/save   body ssid=..&password=.. (form-encoded; blank
+//                        password = open network)
+// The save is only STAGED here. The httpd task must not touch ESPHome's
+// preferences or WiFi state machine, so the component loop takes the pair via
+// irrigoto_wifi_save_take() and calls save_wifi_sta() on the main loop (the
+// captive portal's own handler defers to the main loop for the same reason).
+extern int irrigoto_wifi_scan_json(char *buf, size_t len);   // bridge from irrigoto.cpp
+
+static portMUX_TYPE s_wifi_save_mux = portMUX_INITIALIZER_UNLOCKED;
+static char s_wifi_save_ssid[33];
+static char s_wifi_save_pw[65];
+static volatile bool s_wifi_save_pending = false;
+
+bool irrigoto_wifi_save_take(char *ssid, size_t ssid_len, char *password, size_t password_len)
+{
+    if (!s_wifi_save_pending) return false;   // cheap pre-check; the copy is under the lock
+    bool had = false;
+    taskENTER_CRITICAL(&s_wifi_save_mux);
+    if (s_wifi_save_pending) {
+        strncpy(ssid, s_wifi_save_ssid, ssid_len - 1);         ssid[ssid_len - 1] = 0;
+        strncpy(password, s_wifi_save_pw, password_len - 1);   password[password_len - 1] = 0;
+        memset(s_wifi_save_pw, 0, sizeof(s_wifi_save_pw));
+        s_wifi_save_pending = false;
+        had = true;
+    }
+    taskEXIT_CRITICAL(&s_wifi_save_mux);
+    return had;
+}
+
+// Decode one form-encoded value (%XX and '+') into dst. Unlike url_decode()
+// (64-byte scratch, sized for zone/device names) this is bounded by dst_len,
+// so a fully percent-encoded 64-char password cannot overrun anything.
+static void form_decode(char *dst, size_t dst_len, const char *src)
+{
+    size_t j = 0;
+    for (size_t i = 0; src[i] && j + 1 < dst_len; i++) {
+        char c = src[i];
+        if (c == '%' && isxdigit((unsigned char)src[i + 1]) && isxdigit((unsigned char)src[i + 2])) {
+            char hex[3] = { src[i + 1], src[i + 2], 0 };
+            c = (char)strtol(hex, NULL, 16);
+            i += 2;
+        } else if (c == '+') {
+            c = ' ';
+        }
+        dst[j++] = c;
+    }
+    dst[j] = 0;
+}
+
+static esp_err_t wifi_scan_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/json");
+    HTTP_CONN_CLOSE(req);
+    TOUCH_ACTIVITY();
+    setup_window_touch();   // someone is provisioning: keep the unit awake
+    // 20 entries x (32-char SSID escaped up to 6x + fields) fits comfortably.
+    char *buf = malloc(4096);
+    if (!buf) { httpd_resp_sendstr(req, "{\"aps\":[]}"); return ESP_OK; }
+    int n = irrigoto_wifi_scan_json(buf, 4096);
+    httpd_resp_send(req, buf, n);
+    free(buf);
+    return ESP_OK;
+}
+
+static esp_err_t wifi_save_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/json");
+    HTTP_CONN_CLOSE(req);
+    TOUCH_ACTIVITY();
+    setup_window_touch();
+    // Worst case both values fully percent-encoded: 32*3 + 64*3 + the keys.
+    char body[320] = {0};
+    int len = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (len <= 0) {
+        httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"empty body\"}");
+        return ESP_OK;
+    }
+    body[len] = 0;
+    char raw[200] = {0};
+    char ssid[33] = {0}, pw[65] = {0};
+    if (httpd_query_key_value(body, "ssid", raw, sizeof(raw)) == ESP_OK)
+        form_decode(ssid, sizeof(ssid), raw);
+    memset(raw, 0, sizeof(raw));
+    if (httpd_query_key_value(body, "password", raw, sizeof(raw)) == ESP_OK)
+        form_decode(pw, sizeof(pw), raw);
+    memset(raw, 0, sizeof(raw));
+    memset(body, 0, sizeof(body));
+    if (!ssid[0]) {
+        httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"network name required\"}");
+        return ESP_OK;
+    }
+    size_t pl = strlen(pw);
+    if (pl > 0 && pl < 8) {   // WPA passphrases are 8-63 chars (64 = raw hex PSK)
+        memset(pw, 0, sizeof(pw));
+        httpd_resp_sendstr(req,
+            "{\"ok\":false,\"error\":\"WiFi passwords are 8 to 63 characters (leave blank for an open network)\"}");
+        return ESP_OK;
+    }
+    taskENTER_CRITICAL(&s_wifi_save_mux);
+    strncpy(s_wifi_save_ssid, ssid, sizeof(s_wifi_save_ssid) - 1); s_wifi_save_ssid[sizeof(s_wifi_save_ssid) - 1] = 0;
+    strncpy(s_wifi_save_pw,   pw,   sizeof(s_wifi_save_pw) - 1);   s_wifi_save_pw[sizeof(s_wifi_save_pw) - 1] = 0;
+    s_wifi_save_pending = true;
+    taskEXIT_CRITICAL(&s_wifi_save_mux);
+    memset(pw, 0, sizeof(pw));
+    ESP_LOGI(TAG, "WiFi credentials staged from the web UI for '%s' (%s); component loop applies them",
+             ssid, pl ? "secured" : "open network");
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
+
 // b398: zone import/export -- the foundation for HA zone backup/restore and
 // (later) editing. GET /zone/export?id=N emits a full, round-trippable zone
 // JSON (every point field, unlike the lossy /api/all). POST /zone/import accepts
@@ -19117,7 +19311,7 @@ static void zone_web_start(void)
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
     cfg.server_port      = ZONE_WEB_PORT;
     cfg.ctrl_port        = ZONE_WEB_CTRL_PORT;
-    cfg.max_uri_handlers  = 77;  // b530: 76 -> 77 (/api/led GET); b525: 74 -> 76 (/api/winter GET+POST); b522: 72 -> 74 (/api/fault_hold GET+POST); b512: 70 -> 72 (/api/uart_log GET+POST); b489: 68 -> 70, keeping the 2-slot margin over
+    cfg.max_uri_handlers  = 79;  // b543: 77 -> 79 (/wifi/scan GET, /wifi/save POST); b530: 76 -> 77 (/api/led GET); b525: 74 -> 76 (/api/winter GET+POST); b522: 72 -> 74 (/api/fault_hold GET+POST); b512: 70 -> 72 (/api/uart_log GET+POST); b489: 68 -> 70, keeping the 2-slot margin over
                                  // the _Static_assert below.
                                  // MUST be set before httpd_start (cfg is copied there);
                                  // headroom over uris[] count -- _Static_assert below guards it.
@@ -19161,6 +19355,7 @@ static void zone_web_start(void)
         {.uri="/api/cal/clear",   .method=HTTP_POST, .handler=api_cal_clear_handler},
         {.uri="/api/status",      .method=HTTP_GET,  .handler=api_status_handler},
         {.uri="/api/boot_diag",   .method=HTTP_GET,  .handler=api_boot_diag_handler},  // b347
+        {.uri="/api/log",         .method=HTTP_GET,  .handler=api_log_handler},        // b544
         {.uri="/api/fault_log",   .method=HTTP_GET,  .handler=api_fault_log_handler},  // b477
         {.uri="/api/theme",       .method=HTTP_GET,  .handler=api_theme_handler},
         {.uri="/api/theme",       .method=HTTP_POST, .handler=api_theme_handler},
@@ -19199,6 +19394,8 @@ static void zone_web_start(void)
         {.uri="/valve/probe",           .method=HTTP_GET,  .handler=valve_probe_handler}, // b377
         {.uri="/wifi/ap_mode",          .method=HTTP_POST, .handler=wifi_ap_mode_handler},   // b396
         {.uri="/wifi/reconnect",        .method=HTTP_POST, .handler=wifi_reconnect_handler}, // b396
+        {.uri="/wifi/scan",             .method=HTTP_GET,  .handler=wifi_scan_handler},      // b543
+        {.uri="/wifi/save",             .method=HTTP_POST, .handler=wifi_save_handler},      // b543
         {.uri="/zone/export",           .method=HTTP_GET,  .handler=zone_export_handler},    // b398
         {.uri="/zone/import",           .method=HTTP_POST, .handler=zone_import_handler},     // b398
         {.uri="/zone/trace",            .method=HTTP_POST, .handler=zone_trace_handler},      // b417
@@ -19213,7 +19410,7 @@ static void zone_web_start(void)
         {.uri="/fs/upload",             .method=HTTP_POST, .handler=fs_upload_handler},
         {.uri="/fs/delete",             .method=HTTP_POST, .handler=fs_delete_handler},
     };
-    _Static_assert(sizeof(uris)/sizeof(uris[0]) <= 75,   // b530: 74 -> 75 (/api/led GET); b525: 72 -> 74 (/api/winter GET+POST); b522: 70 -> 72 (/api/fault_hold GET+POST); b512: 68 -> 70 (/api/uart_log GET+POST); b489: 66 -> 68
+    _Static_assert(sizeof(uris)/sizeof(uris[0]) <= 77,   // b543: 75 -> 77 (/wifi/scan GET, /wifi/save POST); b530: 74 -> 75 (/api/led GET); b525: 72 -> 74 (/api/winter GET+POST); b522: 70 -> 72 (/api/fault_hold GET+POST); b512: 68 -> 70 (/api/uart_log GET+POST); b489: 66 -> 68
                    "uris[] exceeds cfg.max_uri_handlers -- raise it before httpd_start");
     for (size_t i = 0; i < sizeof(uris)/sizeof(uris[0]); i++)
         httpd_register_uri_handler(s_zone_server, &uris[i]);
@@ -19432,6 +19629,7 @@ void irrigoto_init(void)
     // b540: a manual/power-on wake opens the WiFi setup window (see
     // setup_window_hold); routine timer wakes don't.
     s_setup_window = (esp_reset_reason() != ESP_RST_DEEPSLEEP);
+    if (s_setup_window) s_setup_window_until = pdMS_TO_TICKS(SETUP_WINDOW_MS);   // b543: from boot
     irrigoto_winter_arm_wake_window();   // b525: no-op unless winterized
 
     // b536: 2048 -> 4096. It logs (via ESPHome's log hook) while blinking

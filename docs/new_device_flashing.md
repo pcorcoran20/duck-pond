@@ -171,11 +171,53 @@ logs: it'll be `irrigoto-<MAC suffix>` (auto-derived from this unit's MAC
 because `name_add_mac_suffix: true` in irrigoto-core.yaml). Note this
 suffix — you'll need it for HA setup and for `ha-regen.sh`.
 
-If WiFi join fails the device falls back to an AP named `irrigoto-<suffix>
-Fallback Hotspot` — join that, browse to `192.168.4.1`, fix creds, save.
+If the join fails (a typo in `secrets.yaml`, a new router, a unit moved to
+another house) the device brings up its own hotspot after 30 s of trying.
+See [If the unit can't join your WiFi](#if-the-unit-cant-join-your-wifi)
+below.
 
 `Ctrl+C` to exit the serial monitor. Power-cycle to confirm the device
 boots into the new firmware standalone.
+
+## If the unit can't join your WiFi
+
+After 30 s without a connection the unit starts an access point named by
+`ap: ssid:` in `irrigoto-core.yaml` (`irrigoto Fallback` by default), with
+the `ap_password` from `secrets.yaml`. Join it from a phone and open
+`http://192.168.4.1/`.
+
+That page is irrigoto's own landing page, not ESPHome's captive portal:
+the firmware's web server wins the port-80 bind on the hotspot, so the
+portal's form is never reachable (the portal stays in the config only for
+its DNS catch-all, which is what makes the phone's "sign in to network"
+sheet open the device page). While the unit is off WiFi the landing page
+shows a **WiFi** card at the top:
+
+1. Pick your network from the scan list, or choose **Other network…**
+   and type a hidden SSID.
+2. Enter the password (leave it blank for an open network).
+3. Tap **Connect**. The card reports "Saved. Joining…" and then either
+   "Connected" with the unit's new address, or that the phone lost the
+   hotspot, which is the same thing seen from the phone's side: the
+   hotspot closes as soon as the station is up.
+4. Rejoin your home WiFi and open `http://irrigoto-<suffix>.local/` (or
+   the address the card showed).
+
+Notes:
+
+- The saved network survives reboots and deep sleep (it is stored in
+  ESPHome's wifi preference, the same one the captive portal writes). It
+  is keyed to the compiled config, so a later build whose config changed
+  goes back to the `secrets.yaml` credentials; keep those correct too.
+- After a power-on or manual wake the unit stays awake for up to 5 minutes
+  without WiFi so the hotspot is usable, and every scan or save from the
+  WiFi card extends that by another 5 minutes. On routine deep-sleep timer
+  wakes it does not hold, so provisioning is a power-cycle away.
+- If the hotspot comes straight back after a save, the password was wrong:
+  join it again and retry.
+- Lost the `ap_password`? Five power-cycles in a row, each within 30 s of
+  the previous boot, make the next hotspot an open one named
+  `irrigoto-<suffix> Setup`.
 
 ## Step 8: Bring up in HA
 

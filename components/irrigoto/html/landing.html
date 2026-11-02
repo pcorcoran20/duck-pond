@@ -156,12 +156,13 @@ transition:border-color .15s,background .15s;}
 }
 
 /* fields: recessed, accent focus border (range/checkbox keep the ring) */
-input[type=text],input[type=number],input[type=time],select,.throw-inp,.path-inp,.file-inp{
+input[type=text],input[type=password],input[type=number],input[type=time],select,.throw-inp,.path-inp,.file-inp{
 background:var(--bg);border:1px solid var(--border);border-radius:9px;
 color:var(--text);font-size:15px;padding:10px 12px;min-height:42px;width:100%;}
 input:not([type=range]):not([type=checkbox]):focus,select:focus{outline:none;border-color:var(--green);}
 input::placeholder{color:var(--text-dim);}
 input[type=range]{accent-color:var(--green);width:100%;height:36px;}
+input[type=checkbox]{accent-color:var(--green);width:16px;height:16px;margin:0;}
 .field{display:flex;flex-direction:column;gap:6px;}
 .field label{font-size:12.5px;font-weight:500;}
 /* .name-in: border on hover; resting border on touch */
@@ -208,6 +209,16 @@ main{flex:1;overflow-y:auto;}
 input.dev-name-inp{width:min(150px,34vw);font-size:13px;padding:6px 8px;}
 .edit-icon{display:none;}
 #winter-left{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+/* b543: WiFi (provisioning) card. Hidden until /api/all says the station is not
+   associated; when hidden, the next section keeps the first-section header rule. */
+#wifi-setup{display:none;}
+#wifi-setup.show{display:flex;}
+#wifi-setup:not(.show) + section > .sec-hdr{padding-top:0;border-top:0;}
+#wifi-setup .field{margin-bottom:10px;}
+.check-row{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:500;color:var(--text-mid);cursor:pointer;}
+/* status strip: Hearth tints (18% ok / 10-14% danger) with solid ink */
+.score.ok{background:var(--ok-dim);border-color:transparent;color:var(--ok-ink);}
+.score.err{background:var(--red-dim);border-color:transparent;color:var(--red-ink);}
 /* zone cards (JS: div.card#zcard-N > .zone-card); the radar disc is the card's icon tile */
 #zone-list{display:flex;flex-direction:column;gap:8px;}
 .zone-card{display:flex;gap:12px;align-items:flex-start;}
@@ -295,6 +306,36 @@ width:100%;max-width:560px;max-height:88dvh;overflow-y:auto;box-shadow:var(--sha
   </div>
 </div>
 <main>
+  <!-- b543: WiFi provisioning. ESPHome's captive portal never answers on the
+       fallback hotspot (irrigoto's httpd wins the :80 bind), so this card is
+       how credentials get in. Shown only while the station is not associated
+       (/api/all wifi_sta === false), i.e. when served over the hotspot. -->
+  <section id="wifi-setup">
+    <div class="sec-hdr">
+      <span class="sec-title">WiFi</span>
+      <button class="sec-btn" id="wifi-scan-btn" onclick="wifiScan()">Rescan</button>
+    </div>
+    <div class="card">
+      <div class="cal-desc">Not on a WiFi network. Choose yours and enter its password; this hotspot closes once the unit has joined.</div>
+      <div class="field">
+        <label for="wifi-net">Network</label>
+        <select id="wifi-net" onchange="wifiNetPick()"><option value="">Scanning&hellip;</option></select>
+      </div>
+      <div class="field" id="wifi-ssid-row" style="display:none">
+        <label for="wifi-ssid">Network name</label>
+        <input type="text" id="wifi-ssid" maxlength="32" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="SSID">
+      </div>
+      <div class="field">
+        <label for="wifi-pw">Password</label>
+        <input type="password" id="wifi-pw" maxlength="64" autocapitalize="off" autocorrect="off" placeholder="Blank for an open network">
+        <label class="check-row"><input type="checkbox" id="wifi-pw-show" onchange="document.getElementById('wifi-pw').type=this.checked?'text':'password'">Show password</label>
+      </div>
+      <div class="score" id="wifi-status" style="display:none"></div>
+      <div class="zone-actions" style="margin-top:10px">
+        <button class="btn btn-primary" id="wifi-save-btn" onclick="wifiSave()"><svg class="i"><use href="#i-wifi"/></svg>Connect</button>
+      </div>
+    </div>
+  </section>
   <section>
     <div class="sec-hdr">
       <span class="sec-title">Zones</span>
@@ -656,6 +697,121 @@ async function reconnectNet(){
 }
 updateWifiButtons();
 
+// b543: WiFi (provisioning) card. Visible only while the station is not
+// associated (/api/all wifi_sta === false), which in practice means this page
+// came over the fallback hotspot. Networks are the firmware's last scan
+// (GET /wifi/scan); the pair goes to POST /wifi/save, which the ESPHome
+// component applies on its main loop. On success the hotspot closes and the
+// phone loses this page, so the card says so before it happens.
+var wifiShown=false, wifiScanned=false, wifiSaving=false, wifiSavedSsid='', wifiPollTimer=null, wifiHost='';
+function wifiStatus(msg, cls){
+  var el=document.getElementById('wifi-status');
+  el.style.display=msg?'':'none';
+  el.className='score'+(cls?' '+cls:'');
+  el.textContent=msg||'';
+}
+function wifiShowCard(){
+  if(wifiShown) return;
+  wifiShown=true;
+  document.getElementById('wifi-setup').classList.add('show');
+  if(!wifiScanned) wifiScan();
+}
+function wifiAddress(ip){
+  return wifiHost?'http://'+wifiHost+'.local/':(ip?'http://'+ip+'/':'its address on your network');
+}
+function renderWifiSetup(d){
+  if(d.hostname) wifiHost=d.hostname;
+  if(d.wifi_sta===undefined) return;      // older firmware: no card
+  if(d.wifi_sta){ if(wifiShown) wifiConnected(d.wifi_ip); return; }
+  wifiShowCard();
+}
+function wifiConnected(ip){
+  if(wifiPollTimer){ clearInterval(wifiPollTimer); wifiPollTimer=null; }
+  wifiSaving=false;
+  document.getElementById('wifi-save-btn').disabled=true;
+  wifiStatus('Connected'+(wifiSavedSsid?' to '+wifiSavedSsid:'')+(ip?' ('+ip+')':'')+
+    '. This hotspot closes now: rejoin your home WiFi and open '+wifiAddress(ip),'ok');
+}
+function wifiNetPick(){
+  var sel=document.getElementById('wifi-net');
+  var other=(sel.value==='__other'||sel.value==='');
+  document.getElementById('wifi-ssid-row').style.display=other?'':'none';
+}
+async function wifiScan(){
+  wifiScanned=true;
+  var sel=document.getElementById('wifi-net');
+  var btn=document.getElementById('wifi-scan-btn');
+  btn.disabled=true;
+  try{
+    var d=await fetch('/wifi/scan',{cache:'no-store'}).then(function(r){return r.json();});
+    var aps=(d.aps||[]).slice().sort(function(a,b){return b.rssi-a.rssi;});
+    var cur=sel.value;
+    sel.innerHTML='';
+    if(!aps.length){
+      var none=document.createElement('option');
+      none.value=''; none.textContent='No networks seen yet \u2014 rescan, or type the name';
+      sel.appendChild(none);
+    }
+    aps.forEach(function(a){
+      var o=document.createElement('option');
+      o.value=a.ssid;
+      var q=a.rssi>=-60?'excellent':a.rssi>=-70?'good':a.rssi>=-80?'fair':'weak';
+      o.textContent=a.ssid+' \u00b7 '+q+(a.lock?'':' \u00b7 open');
+      sel.appendChild(o);
+    });
+    var oth=document.createElement('option');
+    oth.value='__other'; oth.textContent='Other network\u2026';
+    sel.appendChild(oth);
+    if(cur && Array.prototype.some.call(sel.options,function(o){return o.value===cur;})) sel.value=cur;
+    else if(!aps.length) sel.value='__other';
+    wifiNetPick();
+  }catch(e){ wifiStatus('Could not read the network list: '+e.message,'err'); }
+  btn.disabled=false;
+}
+async function wifiSave(){
+  var sel=document.getElementById('wifi-net');
+  var ssid=(sel.value&&sel.value!=='__other')?sel.value:document.getElementById('wifi-ssid').value.trim();
+  var pw=document.getElementById('wifi-pw').value;
+  if(!ssid){ wifiStatus('Pick a network or type its name.','err'); return; }
+  if(pw.length&&pw.length<8){ wifiStatus('WiFi passwords are 8 to 63 characters (blank for an open network).','err'); return; }
+  var btn=document.getElementById('wifi-save-btn');
+  btn.disabled=true; wifiSaving=true; wifiSavedSsid=ssid;
+  wifiStatus('Saving\u2026');
+  try{
+    var r=await fetch('/wifi/save',{method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'ssid='+encodeURIComponent(ssid)+'&password='+encodeURIComponent(pw)});
+    var d=await r.json();
+    if(!d.ok){ wifiStatus(d.error||'Save failed.','err'); btn.disabled=false; wifiSaving=false; return; }
+  }catch(e){ wifiStatus('Could not reach the unit: '+e.message,'err'); btn.disabled=false; wifiSaving=false; return; }
+  wifiStatus('Saved. Joining '+ssid+'\u2026 (up to a minute)');
+  var started=Date.now(), misses=0;
+  if(wifiPollTimer) clearInterval(wifiPollTimer);
+  wifiPollTimer=setInterval(async function(){
+    try{
+      var s=await fetch('/api/all',{cache:'no-store'}).then(function(r){return r.json();});
+      misses=0;
+      if(s.hostname) wifiHost=s.hostname;
+      if(s.wifi_sta){ wifiConnected(s.wifi_ip); return; }
+    }catch(e){
+      // The hotspot going away is what success looks like from here.
+      if(++misses>=3){
+        clearInterval(wifiPollTimer); wifiPollTimer=null; wifiSaving=false;
+        wifiStatus('Lost the hotspot, which usually means the unit joined '+ssid+
+          '. Rejoin your home WiFi and open '+wifiAddress('')+
+          '. If the hotspot comes back, the password was wrong: join it again and retry.','ok');
+        return;
+      }
+    }
+    if(Date.now()-started>90000){
+      clearInterval(wifiPollTimer); wifiPollTimer=null; wifiSaving=false; btn.disabled=false;
+      wifiStatus('Still not connected after 90 s. Check the password and try again.','err');
+    }
+  },3000);
+}
+// Served over the hotspot: show the card at once rather than after the first poll.
+if(location.hostname==='192.168.4.1') wifiShowCard();
+
 async function refresh(){
   try{
     const d=await fetch('/api/all').then(r=>r.json());
@@ -665,6 +821,7 @@ async function refresh(){
       (d.uart_log===undefined?'':(d.uart_log?' · UART log on':' · UART log off'));
     document.getElementById('d-wifi').innerHTML=
       (d.wifi_ip?'<span style="color:var(--text-mid);font-size:11px">'+d.wifi_ip+'</span> ':'')+rssiLabel(d.wifi_rssi);
+    renderWifiSetup(d);   // b543
     {const c=document.getElementById('d-chg');
      if(c)c.innerHTML=d.charging===1?'<span style="color:var(--green)"><svg class="i"><use href="#i-zap"/></svg> charging</span>':d.charging===0?'not charging':'<span style="color:var(--text-mid)">unknown</span>';}
     if(d.bat_mv){
