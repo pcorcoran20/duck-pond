@@ -16170,7 +16170,7 @@ static void uart_console_set(bool on, bool persist)
 }
 
 
-// b544: RAM log ring. Every formatted ESPHome log line (the same hook that
+// b543: RAM log ring. Every formatted ESPHome log line (the same hook that
 // feeds the UART console) is copied into an 8 KB ring so GET /api/log can
 // return the recent log over HTTP. Motivation (2026-11-01, 43c89c): a unit
 // stuck on its fallback hotspot is unreachable over the native API --
@@ -19355,7 +19355,7 @@ static void zone_web_start(void)
         {.uri="/api/cal/clear",   .method=HTTP_POST, .handler=api_cal_clear_handler},
         {.uri="/api/status",      .method=HTTP_GET,  .handler=api_status_handler},
         {.uri="/api/boot_diag",   .method=HTTP_GET,  .handler=api_boot_diag_handler},  // b347
-        {.uri="/api/log",         .method=HTTP_GET,  .handler=api_log_handler},        // b544
+        {.uri="/api/log",         .method=HTTP_GET,  .handler=api_log_handler},        // b543
         {.uri="/api/fault_log",   .method=HTTP_GET,  .handler=api_fault_log_handler},  // b477
         {.uri="/api/theme",       .method=HTTP_GET,  .handler=api_theme_handler},
         {.uri="/api/theme",       .method=HTTP_POST, .handler=api_theme_handler},

@@ -76,7 +76,7 @@ void IrrigotoComponent::setup() {
     if (esphome::logger::global_logger != nullptr) {
         esphome::logger::global_logger->add_log_callback(
             this, [](void *, uint8_t, const char *, const char *msg, size_t len) {
-                irrigoto_log_ring_push(msg, len);      // b544: always
+                irrigoto_log_ring_push(msg, len);      // b543: always
                 irrigoto_uart_console_write(msg, len);
             });
     }

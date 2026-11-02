@@ -80,7 +80,7 @@ int irrigoto_get_mode(void);
 void irrigoto_get_status(char *buf, size_t len);
 // b512: deferred, non-blocking UART console (see irrigoto.c uart_console_*).
 void irrigoto_uart_console_write(const char *msg, size_t len);
-// b544: RAM log ring served by GET /api/log (see irrigoto.c log_ring_*).
+// b543: RAM log ring served by GET /api/log (see irrigoto.c log_ring_*).
 void irrigoto_log_ring_push(const char *msg, size_t len);
 
 /**
