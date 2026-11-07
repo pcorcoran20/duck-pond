@@ -18,7 +18,11 @@ input_number:
   oto_throw_ft:
     name: OtO Throw
     min: 2
-    max: 40
+    # 20 ft is where this unit's calibration table ends: above it every
+    # request maps to the same valve angle, so "closer" clicks do nothing
+    # until the number is back under 20. Re-cal and raise if the unit can
+    # genuinely reach further.
+    max: 20
     step: 1
     unit_of_measurement: ft
     icon: mdi:arrow-expand-horizontal
@@ -61,7 +65,9 @@ script:
   # Point the nozzle at the current bearing/throw and open the valve to match.
   oto_aim:
     alias: "OtO: aim (water at bearing/throw)"
-    mode: queued
+    # restart: a burst of joystick taps ends at the latest bearing/throw
+    # instead of replaying every intermediate target one by one.
+    mode: restart
     sequence:
       - action: rest_command.oto_aim_throw
         data:
@@ -81,6 +87,7 @@ script:
 
   oto_up:
     alias: "OtO: throw further"
+    mode: queued
     sequence:
       - action: input_number.set_value
         target: { entity_id: input_number.oto_throw_ft }
@@ -91,6 +98,7 @@ script:
 
   oto_down:
     alias: "OtO: throw closer"
+    mode: queued
     sequence:
       - action: input_number.set_value
         target: { entity_id: input_number.oto_throw_ft }
@@ -101,6 +109,7 @@ script:
 
   oto_left:
     alias: "OtO: rotate left"
+    mode: queued
     sequence:
       - action: input_number.set_value
         target: { entity_id: input_number.oto_bearing }
@@ -110,6 +119,7 @@ script:
 
   oto_right:
     alias: "OtO: rotate right"
+    mode: queued
     sequence:
       - action: input_number.set_value
         target: { entity_id: input_number.oto_bearing }

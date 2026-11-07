@@ -22189,16 +22189,49 @@ static bool aim_to(float target_bearing, float target_valve_deg)
     chase_motor_teardown(&nm);
     chase_motor_teardown(&vm);
 
+    // b544: precision finish. The chase loop above stops as soon as each
+    // motor is inside its tolerance, which in practice means it parks right
+    // at the edge: 43c89c logged valve landings of +0.7..+0.9 deg against the
+    // 1.0 deg tolerance and bearing landings of 1.3..1.4 deg against 1.5, on
+    // every HA aim. Near the closed end 1 deg of valve is ~0.4 ft of throw,
+    // and a joystick step is only a few degrees of either motor, so the
+    // residual swallowed a whole "closer"/"left" click one time and doubled
+    // it the next. Hand the last fraction of a degree to the slow closed-
+    // loop movers (ramped, backlash-compensated on reversal, jog mode in the
+    // valve's friction zone). Costs well under a second per motor; skipped
+    // when the chase already landed close enough. Results feed the final
+    // read below; ok keeps the chase tolerances so callers see no change.
+    const float FINISH_TOL_N = 0.5f;
+    const float FINISH_TOL_V = 0.4f;
+    const uint32_t FINISH_TIMEOUT_MS = 2500;
+    as5600_read(ADDR_AS5600,  &n_raw, NULL, NULL);
+    as5600_read(ADDR_AS5600L, &v_raw, NULL, NULL);
+    float res_b = target_bearing - n_raw * (360.0f / 4096.0f);
+    while (res_b >  180.0f) res_b -= 360.0f;
+    while (res_b < -180.0f) res_b += 360.0f;
+    float res_v = target_valve_deg - v_raw * (360.0f / 4096.0f);
+    if (fabsf(res_v) > FINISH_TOL_V) {
+        bool f = valve_goto(target_valve_deg, FINISH_TOL_V, FINISH_TIMEOUT_MS, false);
+        INFO("aim: valve finish from %+.2f deg -> %s", res_v, f ? "ok" : "not reached");
+    }
+    if (fabsf(res_b) > FINISH_TOL_N) {
+        bool f = nozzle_goto(target_bearing, FINISH_TOL_N, FINISH_TIMEOUT_MS, false);
+        INFO("aim: bearing finish from %+.2f deg -> %s", res_b, f ? "ok" : "not reached");
+    }
+
     as5600_read(ADDR_AS5600,  &n_raw, NULL, NULL);
     as5600_read(ADDR_AS5600L, &v_raw, NULL, NULL);
     float fin_b = n_raw * (360.0f / 4096.0f);
     float fin_v = v_raw * (360.0f / 4096.0f);
+    float fin_err_b = target_bearing - fin_b;
+    while (fin_err_b >  180.0f) fin_err_b -= 360.0f;
+    while (fin_err_b < -180.0f) fin_err_b += 360.0f;
+    bool ok = (fabsf(fin_err_b) < N_TOL_DEG) && (fabsf(target_valve_deg - fin_v) < V_TOL_DEG);
     uint32_t elapsed = (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount() - t_start);
     INFO("aim: done in %u ms -- bearing %.1f (tgt %.1f) valve %.1f (tgt %.1f) ok=%d",
-         (unsigned)elapsed, fin_b, target_bearing, fin_v, target_valve_deg,
-         n_done && v_done);
+         (unsigned)elapsed, fin_b, target_bearing, fin_v, target_valve_deg, ok);
 
-    return n_done && v_done;
+    return ok;
 }
 
 bool irrigoto_aim_valve(float bearing_deg, float valve_deg)
