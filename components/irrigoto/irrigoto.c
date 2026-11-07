@@ -22189,34 +22189,57 @@ static bool aim_to(float target_bearing, float target_valve_deg)
     chase_motor_teardown(&nm);
     chase_motor_teardown(&vm);
 
-    // b544: precision finish. The chase loop above stops as soon as each
-    // motor is inside its tolerance, which in practice means it parks right
-    // at the edge: 43c89c logged valve landings of +0.7..+0.9 deg against the
-    // 1.0 deg tolerance and bearing landings of 1.3..1.4 deg against 1.5, on
-    // every HA aim. Near the closed end 1 deg of valve is ~0.4 ft of throw,
-    // and a joystick step is only a few degrees of either motor, so the
-    // residual swallowed a whole "closer"/"left" click one time and doubled
-    // it the next. Hand the last fraction of a degree to the slow closed-
-    // loop movers (ramped, backlash-compensated on reversal, jog mode in the
-    // valve's friction zone). Costs well under a second per motor; skipped
-    // when the chase already landed close enough. Results feed the final
-    // read below; ok keeps the chase tolerances so callers see no change.
-    const float FINISH_TOL_N = 0.5f;
-    const float FINISH_TOL_V = 0.4f;
-    const uint32_t FINISH_TIMEOUT_MS = 2500;
-    as5600_read(ADDR_AS5600,  &n_raw, NULL, NULL);
-    as5600_read(ADDR_AS5600L, &v_raw, NULL, NULL);
-    float res_b = target_bearing - n_raw * (360.0f / 4096.0f);
-    while (res_b >  180.0f) res_b -= 360.0f;
-    while (res_b < -180.0f) res_b += 360.0f;
-    float res_v = target_valve_deg - v_raw * (360.0f / 4096.0f);
-    if (fabsf(res_v) > FINISH_TOL_V) {
-        bool f = valve_goto(target_valve_deg, FINISH_TOL_V, FINISH_TIMEOUT_MS, false);
-        INFO("aim: valve finish from %+.2f deg -> %s", res_v, f ? "ok" : "not reached");
-    }
-    if (fabsf(res_b) > FINISH_TOL_N) {
-        bool f = nozzle_goto(target_bearing, FINISH_TOL_N, FINISH_TIMEOUT_MS, false);
-        INFO("aim: bearing finish from %+.2f deg -> %s", res_b, f ? "ok" : "not reached");
+    // b544/b545: precision finish. The chase loop above stops as soon as
+    // each motor is inside its tolerance, which in practice means it parks
+    // right at the edge (43c89c: valve +0.7..+0.9 deg against 1.0, bearing
+    // 1.3..1.4 against 1.5, on every HA aim). Near the closed end 1 deg of
+    // valve is ~0.4 ft of throw and a joystick step is only a few degrees of
+    // either motor, so the residual swallowed one "closer"/"left" tap and
+    // doubled the next. Hand the remainder to the slow closed-loop movers.
+    //
+    // b545 lessons from the first cut (b544): (1) only finish a motor whose
+    // TARGET changed -- otherwise every bearing tap also nudged the valve up
+    // to its target and the throw crept out on left/right; (2) no backlash
+    // overshoot in the finish (prev_dir=-1): the fast move already took the
+    // slack up, and the movers' default swung the nozzle 15 deg and the valve
+    // 5 deg past the target on every reverse-direction tap; (3) the mechanism
+    // springs back 1-2 deg after the motor de-energises, so settle, re-read
+    // and repeat up to FINISH_PASSES times instead of trusting one shot;
+    // (4) 0.6 deg on the valve: the friction-zone jogger cannot reliably do
+    // 0.4 and burned all its pulses trying. ok keeps the chase tolerances.
+    const float    FINISH_TOL_N      = 0.7f;
+    const float    FINISH_TOL_V      = 0.6f;
+    const int      FINISH_PASSES     = 3;
+    const uint32_t FINISH_TIMEOUT_MS = 1000;   // 3 passes x 2 motors stays inside HA's 15 s rest_command timeout
+    const uint32_t FINISH_SETTLE_MS  = 150;
+    static float   s_aim_last_b = -1.0f, s_aim_last_v = -1.0f;   // last commanded targets
+    bool b_changed = (fabsf(target_bearing   - s_aim_last_b) > 0.05f);
+    bool v_changed = (fabsf(target_valve_deg - s_aim_last_v) > 0.05f);
+    s_aim_last_b = target_bearing;
+    s_aim_last_v = target_valve_deg;
+
+    vTaskDelay(pdMS_TO_TICKS(FINISH_SETTLE_MS));
+    for (int pass = 0; pass < FINISH_PASSES; pass++) {
+        as5600_read(ADDR_AS5600,  &n_raw, NULL, NULL);
+        as5600_read(ADDR_AS5600L, &v_raw, NULL, NULL);
+        float res_b = target_bearing - n_raw * (360.0f / 4096.0f);
+        while (res_b >  180.0f) res_b -= 360.0f;
+        while (res_b < -180.0f) res_b += 360.0f;
+        float res_v = target_valve_deg - v_raw * (360.0f / 4096.0f);
+        // A motor whose target did not change is left alone unless the chase
+        // itself knocked it out of the coarse tolerance.
+        bool do_v = (fabsf(res_v) > FINISH_TOL_V) && (v_changed || fabsf(res_v) >= V_TOL_DEG);
+        bool do_b = (fabsf(res_b) > FINISH_TOL_N) && (b_changed || fabsf(res_b) >= N_TOL_DEG);
+        if (!do_v && !do_b) break;
+        if (do_v) {
+            bool f = valve_goto_ex(target_valve_deg, FINISH_TOL_V, FINISH_TIMEOUT_MS, false, -1);
+            INFO("aim: valve finish pass %d from %+.2f deg -> %s", pass + 1, res_v, f ? "ok" : "not reached");
+        }
+        if (do_b) {
+            bool f = nozzle_goto_ex(target_bearing, FINISH_TOL_N, FINISH_TIMEOUT_MS, false, -1);
+            INFO("aim: bearing finish pass %d from %+.2f deg -> %s", pass + 1, res_b, f ? "ok" : "not reached");
+        }
+        vTaskDelay(pdMS_TO_TICKS(FINISH_SETTLE_MS));
     }
 
     as5600_read(ADDR_AS5600,  &n_raw, NULL, NULL);
