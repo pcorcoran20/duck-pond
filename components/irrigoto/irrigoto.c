@@ -462,6 +462,14 @@ static char          s_smooth_wbin_path[64] = {0};
 #define GENTLE_MAX_PASSES            20    // cap; adaptive termination usually hits 5-12
 static float         s_last_depth_mm  = 3.175f; // target depth from last watering
 static uint16_t      s_water_zone_id  = 0;    // which zone is currently watering
+// b546: ad-hoc "sweep here" sector. POST /zone/water with bearing+width(+near,
+// far) builds a sector polygon in RAM and waters it through the normal zone
+// planner under this reserved id; nothing is written to flash and the
+// previously selected zone id is restored when the run ends.
+#define ZONE_ID_ADHOC 250
+static zone_perimeter_t s_adhoc_zone;
+static bool             s_adhoc_zone_valid = false;
+static uint16_t         s_adhoc_prev_zone  = 0;
 static SemaphoreHandle_t s_tcp_mutex = NULL;
 
 // ── Logging helpers ───────────────────────────────────────────────────────────
@@ -8837,6 +8845,11 @@ static bool nozzle_sweep_encoder_gentle(
 // LittleFS-first zone load. Falls back to NVS only for zone 0 (legacy migration).
 static esp_err_t zone_load_primary(uint16_t id, zone_perimeter_t *z)
 {
+    if (id == ZONE_ID_ADHOC) {                 // b546: RAM-only sweep sector
+        if (!s_adhoc_zone_valid) return ESP_ERR_NOT_FOUND;
+        *z = s_adhoc_zone;
+        return ESP_OK;
+    }
     if (storage_ready()) {
         char _name[32]={0};
         if (storage_zone_load(id, _name, sizeof(_name), z) == ESP_OK)
@@ -15503,6 +15516,10 @@ static esp_err_t api_device_name_handler(httpd_req_t *req)
 static void water_task(void *arg) {
     vTaskDelay(pdMS_TO_TICKS(200));  // brief yield so HTTP response can send
     phase_water_zone_mode(s_web_water_mode);
+    if (s_water_zone_id == ZONE_ID_ADHOC) {          // b546: hand the selection back
+        s_water_zone_id    = s_adhoc_prev_zone;
+        s_adhoc_zone_valid = false;
+    }
     // b450 backstop: if the run completed without any flow point firing (a mode
     // that never set s_water_run_had_flow), still stamp the scheduled epoch so it
     // can't retry-loop. No-op for gentle/smooth/serpentine (already marked at flow).
@@ -15525,14 +15542,70 @@ static esp_err_t zone_water_cancel_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// b546: build the ad-hoc sector polygon: an arc at far_mm from bearing-width/2
+// to bearing+width/2, back along an arc at near_mm. Points are in walk order
+// (walk_idx 0..n-1) so every polygon routine sees the intended shape. Near is
+// clamped to at least 600 mm so the polygon never reaches the origin, and the
+// width to 10..300 deg; the ring planner clips each ring's arc to the polygon
+// and skips rings inside the near edge, so nothing else needs to know.
+static bool adhoc_sector_build(float bearing, float width, float near_mm, float far_mm)
+{
+    if (width < 10.0f)  width = 10.0f;
+    if (width > 300.0f) width = 300.0f;
+    if (near_mm < 600.0f) near_mm = 600.0f;
+    if (far_mm < near_mm + 300.0f) far_mm = near_mm + 300.0f;
+    while (bearing <    0.0f) bearing += 360.0f;
+    while (bearing >= 360.0f) bearing -= 360.0f;
+    // <= 10 deg between arc points, 2 arcs, 36-point cap.
+    int per_arc = (int)ceilf(width / 10.0f) + 1;
+    if (per_arc < 2) per_arc = 2;
+    if (per_arc > ZONE_MAX_PERIM_POINTS / 2) per_arc = ZONE_MAX_PERIM_POINTS / 2;
+    memset(&s_adhoc_zone, 0, sizeof(s_adhoc_zone));
+    int n = 0;
+    float b0 = bearing - width / 2.0f;
+    for (int i = 0; i < per_arc; i++) {                     // far arc, left -> right
+        float b = b0 + width * (float)i / (float)(per_arc - 1);
+        b = fmodf(b + 360.0f, 360.0f);
+        s_adhoc_zone.points[n] = (perimeter_point_t){ .nozzle_deg = b, .throw_mm = far_mm,
+                                                       .walk_idx = (uint8_t)n };
+        n++;
+    }
+    for (int i = per_arc - 1; i >= 0; i--) {                // near arc, right -> left
+        float b = b0 + width * (float)i / (float)(per_arc - 1);
+        b = fmodf(b + 360.0f, 360.0f);
+        s_adhoc_zone.points[n] = (perimeter_point_t){ .nozzle_deg = b, .throw_mm = near_mm,
+                                                       .walk_idx = (uint8_t)n };
+        n++;
+    }
+    s_adhoc_zone.num_points = (uint8_t)n;
+    s_adhoc_zone_valid = true;
+    INFO("sweep sector: bearing %.0f width %.0f deg, %.0f..%.0f mm (%d pts)",
+         bearing, width, near_mm, far_mm, n);
+    return true;
+}
+
 static esp_err_t zone_water_handler(httpd_req_t *req)
 {
-    char body[96]={0};
+    char body[192]={0};
     httpd_req_recv(req,body,sizeof(body)-1);
     char mode_s[4]={0}, id_s[8]={0}, dur_s[8]={0};
     httpd_query_key_value(body,"mode",mode_s,sizeof(mode_s));
     httpd_query_key_value(body,"id",id_s,sizeof(id_s));
     httpd_query_key_value(body,"duration",dur_s,sizeof(dur_s));
+    // b546: bearing+width (deg) [+near,far (mm)] = water an ad-hoc sector
+    // instead of a saved zone. id is ignored when they are present.
+    bool adhoc = false;
+    {
+        char b_s[12]={0}, w_s[12]={0}, n_s[12]={0}, f_s[12]={0};
+        if (httpd_query_key_value(body,"bearing",b_s,sizeof(b_s)) == ESP_OK &&
+            httpd_query_key_value(body,"width",  w_s,sizeof(w_s)) == ESP_OK) {
+            httpd_query_key_value(body,"near",n_s,sizeof(n_s));
+            httpd_query_key_value(body,"far", f_s,sizeof(f_s));
+            float near_mm = n_s[0] ? strtof(n_s,NULL) : 600.0f;
+            float far_mm  = f_s[0] ? strtof(f_s,NULL) : cal_get_max_throw_mm();
+            adhoc = adhoc_sector_build(strtof(b_s,NULL), strtof(w_s,NULL), near_mm, far_mm);
+        }
+    }
     // b311: 'c'/'C' = chase mode (requires duration=1..10).
     // b423: '8' = serpentine (continuous serpentine).
     int mode = mode_s[0]>'0'&&mode_s[0]<='6' ? mode_s[0]-'0' :
@@ -15540,7 +15613,7 @@ static esp_err_t zone_water_handler(httpd_req_t *req)
                mode_s[0]=='8'                 ? 8  :
                mode_s[0]=='c'||mode_s[0]=='C' ? WATER_MODE_CHASE :
                mode_s[0]=='d'||mode_s[0]=='D' ? 99 : 0;
-    uint16_t zone_id = (uint16_t)atoi(id_s);
+    uint16_t zone_id = adhoc ? ZONE_ID_ADHOC : (uint16_t)atoi(id_s);
     if(mode==0){
         httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"invalid mode");
         return ESP_OK;
@@ -15571,6 +15644,7 @@ static esp_err_t zone_water_handler(httpd_req_t *req)
     s_water_no_flow_streak = 0;
     s_water_est_min = (mode==99)                  ? 2 :
                       (mode==WATER_MODE_CHASE)    ? duration_min : 13;
+    if (adhoc) s_adhoc_prev_zone = s_water_zone_id;   // b546: restored in water_task
     s_water_zone_id  = zone_id;
     s_chase_duration_min = (mode == WATER_MODE_CHASE) ? duration_min : 0;
     // Optional depth target in eighths of an inch (1..8 = 1/8".. 1"). Absent or
@@ -19820,6 +19894,7 @@ void irrigoto_get_status(char *buf, size_t len)
 // "Zone #<id>" fallback. Display-only helper; ids on the wire unchanged.
 void irrigoto_zone_name_by_id(int zone_id, char *buf, size_t len)
 {
+    if (zone_id == ZONE_ID_ADHOC) { snprintf(buf, len, "Sweep sector"); return; }   // b546
     char lfs_name[32] = {0};
     if (storage_ready()) {
         zone_perimeter_t _tmp;
@@ -19832,6 +19907,7 @@ void irrigoto_zone_name_by_id(int zone_id, char *buf, size_t len)
 
 void irrigoto_get_zone_name(char *buf, size_t len)
 {
+    if (s_water_zone_id == ZONE_ID_ADHOC) { snprintf(buf, len, "Sweep sector"); return; }   // b546
     // b420: self-heal a dangling selection. s_water_zone_id boots as 0 and
     // can be left pointing at a deleted zone; on units whose zone ids are
     // sparse (no zone 0 -- e.g. ba1f88 has 1/3/5) the resolved fallback

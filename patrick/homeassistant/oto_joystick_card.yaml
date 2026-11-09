@@ -22,6 +22,10 @@ cards:
         name: OFF
         icon: mdi:water-off
         tap_action: { action: perform-action, perform_action: script.oto_off }
+      - type: button
+        name: Sweep
+        icon: mdi:sine-wave
+        tap_action: { action: perform-action, perform_action: script.oto_sweep }
   - type: horizontal-stack
     cards:
       - type: button
@@ -42,6 +46,8 @@ cards:
         tap_action: { action: perform-action, perform_action: script.oto_right }
   - type: entities
     entities:
+      - entity: input_number.oto_sweep_width
+      - entity: input_number.oto_sweep_depth_ft
       - entity: input_number.oto_step_deg
       - entity: input_number.oto_step_ft
       - entity: input_text.oto_ip

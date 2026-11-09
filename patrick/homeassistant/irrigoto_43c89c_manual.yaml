@@ -36,6 +36,22 @@ input_number:
     step: 1
     unit_of_measurement: "°"
     initial: 10
+  oto_sweep_width:
+    name: OtO Sweep Width
+    min: 10
+    max: 300
+    step: 5
+    unit_of_measurement: "°"
+    initial: 60
+    icon: mdi:angle-acute
+  oto_sweep_depth_ft:
+    name: OtO Sweep Depth
+    min: 1
+    max: 18
+    step: 0.5
+    unit_of_measurement: ft
+    initial: 4
+    icon: mdi:arrow-expand-vertical
   oto_step_ft:
     name: OtO Throw Step
     min: 0.25
@@ -55,11 +71,28 @@ rest_command:
   oto_valve_close:
     url: "http://{{ states('input_text.oto_ip') }}/valve/close"
     method: POST
+  # Firmware mode codes: 1=1/8" 2=1/4" 3=1/8"x2 5=gentle 1/8" 6=gentle 1/4"
+  # 7=smooth 8=serpentine c=chase d=demo. Names are mapped here so scripts
+  # can say "smooth" etc.
   oto_water_zone:
     url: "http://{{ states('input_text.oto_ip') }}/zone/water"
     method: POST
     content_type: "application/x-www-form-urlencoded"
-    payload: "id={{ zone_id }}&mode={{ mode | default('smooth') }}{% if duration is defined %}&duration={{ duration }}{% endif %}"
+    payload: >-
+      {% set m = mode | default('smooth') | string %}
+      {% set codes = {'pulse':'1','quarter':'2','double':'3','gentle':'5','gentle_quarter':'6','smooth':'7','serpentine':'8','chase':'c','demo':'d'} %}
+      id={{ zone_id }}&mode={{ codes[m] if m in codes else m }}{% if duration is defined %}&duration={{ duration }}{% endif %}
+  # b546: water an ad-hoc sector (no saved zone): bearing+width in degrees,
+  # near/far in mm. The firmware builds the polygon in RAM and runs it through
+  # the normal zone planner, so every mode above works.
+  oto_water_sector:
+    url: "http://{{ states('input_text.oto_ip') }}/zone/water"
+    method: POST
+    content_type: "application/x-www-form-urlencoded"
+    payload: >-
+      {% set m = mode | default('serpentine') | string %}
+      {% set codes = {'pulse':'1','quarter':'2','double':'3','gentle':'5','gentle_quarter':'6','smooth':'7','serpentine':'8','chase':'c','demo':'d'} %}
+      bearing={{ bearing }}&width={{ width }}&near={{ near_mm }}&far={{ far_mm }}&mode={{ codes[m] if m in codes else m }}{% if duration is defined %}&duration={{ duration }}{% endif %}
   oto_water_cancel:
     url: "http://{{ states('input_text.oto_ip') }}/zone/water/cancel"
     method: POST
@@ -87,6 +120,32 @@ script:
     sequence:
       - action: rest_command.oto_water_cancel
       - action: esphome.irrigoto_43c89c_stop   # stop_and_close, via the ESPHome API
+
+  # Sweep back and forth across a sector centred on the current aim: the
+  # bearing slider is the centre, Sweep Width the angle, Sweep Depth the
+  # radial band (half in front of the throw slider's distance, half behind).
+  # Serpentine glides continuously ring by ring; pass mode: chase and a
+  # duration (1-10 min) for a timed romp instead of a metered depth.
+  oto_sweep:
+    alias: "OtO: sweep here"
+    mode: single
+    fields:
+      mode:     { description: "serpentine | smooth | pulse | gentle | chase", example: serpentine }
+      duration: { description: "minutes, chase mode only (1-10)", example: 5 }
+    sequence:
+      - variables:
+          centre_ft: "{{ states('input_number.oto_throw_ft') | float }}"
+          depth_ft:  "{{ states('input_number.oto_sweep_depth_ft') | float }}"
+          near_ft:   "{{ [centre_ft - depth_ft / 2, 2] | max }}"
+          far_ft:    "{{ [centre_ft + depth_ft / 2, 20] | min }}"
+      - action: rest_command.oto_water_sector
+        data:
+          bearing: "{{ states('input_number.oto_bearing') | int }}"
+          width:   "{{ states('input_number.oto_sweep_width') | int }}"
+          near_mm: "{{ (near_ft * 304.8) | round(0) }}"
+          far_mm:  "{{ (far_ft * 304.8) | round(0) }}"
+          mode:    "{{ mode | default('serpentine') }}"
+          duration: "{{ duration | default(0) }}"
 
   oto_up:
     alias: "OtO: throw further"

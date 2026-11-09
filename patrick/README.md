@@ -5,7 +5,7 @@ touch this folder.
 
 | path | what |
 | --- | --- |
-| `homeassistant/irrigoto_43c89c_manual.yaml` | HA package: joystick scripts (on/off, throw ±, bearing ±), `input_text.oto_ip` |
+| `homeassistant/irrigoto_43c89c_manual.yaml` | HA package: joystick scripts (on/off, throw ±, bearing ±, sweep a sector around the aim), `input_text.oto_ip` |
 | `homeassistant/irrigoto_43c89c_spots.yaml` | HA package: spot-water named trees, dry travel between them, optional schedule |
 | `homeassistant/oto_joystick_card.yaml` | Lovelace manual card for the joystick |
 | `tools/duck-pond-remote.html` | Keyboard remote. Open from disk, not through HA (HTTPS can't call the device over HTTP) |
