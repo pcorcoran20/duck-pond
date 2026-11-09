@@ -10789,6 +10789,140 @@ static void water_serpentine_passes(
     }
 }
 
+// b550: oscillate -- steady lawn-sprinkler swing for an ad-hoc sector.
+// The nozzle sweeps the arc under continuous PWM (chase's smooth motion
+// with encoder look-ahead reversal). The valve is NOT driven under PWM:
+// it steps ring to ring with valve_goto_ex() at each end of the swing,
+// which finishes every move approaching from below -- the same way the
+// cal table was built and the joystick aim parks. b549 drove the valve
+// back and forth under PWM like chase does; half of every cycle then sat
+// on the other side of the valve's lash, where the same encoder angle is
+// a more open valve, and the stream landed well past the far ring
+// ("throw too far"). Stepping also removes the look-ahead overshoot that
+// a 1 deg horizon + 470 ms reversal ramp put on an 8 deg valve band.
+static void phase_oscillate_run(float arc_lo, float arc_span,
+                                float min_throw, float max_throw,
+                                int duration_min)
+{
+    float margin = fminf(100.0f, (max_throw - min_throw) * 0.10f);
+    float t_lo = min_throw + margin, t_hi = max_throw - margin;
+    int n_rings = (int)((t_hi - t_lo) / 250.0f + 0.5f) + 1;   // ~10 in apart
+    if (n_rings < 2) n_rings = 2;
+    if (n_rings > 8) n_rings = 8;
+    float ring_mm[8], ring_v[8];
+    for (int i = 0; i < n_rings; i++) {
+        ring_mm[i] = t_lo + (t_hi - t_lo) * (float)i / (float)(n_rings - 1);
+        float v = cal_throw_to_valve_deg(ring_mm[i]);
+        if (v < VALVE_CAL_START_DEG) v = VALVE_CAL_START_DEG;
+        if (v > VALVE_OPEN_DEG)      v = VALVE_OPEN_DEG;
+        ring_v[i] = v;
+        INFO("Oscillate: ring %d at %.0f mm -> valve %.1f deg", i + 1, ring_mm[i], v);
+    }
+    INFO("Oscillate: arc %.1f..%.1f (%.1f deg), %d rings, %d min",
+         arc_lo, fmodf(arc_lo + arc_span, 360.0f), arc_span, n_rings, duration_min);
+
+    const uint16_t NOZZLE_DUTY     = 90;
+    const uint16_t NOZZLE_MIN_DUTY = 60;
+    const float    LOOKAHEAD_DPS   = 18.0f;
+    const float    LOOK_AHEAD_S    = 0.25f;
+    const uint32_t TICK_MS         = 50;
+    const int      LOCKOUT_TICKS   = 12;
+    const float    ease_deg        = fminf(15.0f, fmaxf(3.0f, arc_span / 3.0f));
+
+    sensor_rail_on();
+    motor_rail_on();
+    vTaskDelay(pdMS_TO_TICKS(300));
+    s_water_est_min = duration_min;
+
+    // Start at the CCW edge of the arc on the nearest ring so the first
+    // leg is a full sweep; the valve opens only once the nozzle is there.
+    int ring = 0, ring_dir = +1;
+    nozzle_goto(arc_lo, 1.5f, 10000, false);
+    s_nozzle_last_dir = -1;
+    valve_goto_ex(ring_v[ring], 0.8f, 10000, false, s_valve_last_dir);
+    s_valve_last_dir = +1;      // valve_goto_ex finishes approaching from below
+
+    chase_motor_t nm = {0};
+    if (s_water_abort || !chase_motor_setup(&nm, NOZZLE_PIN_FWD, NOZZLE_PIN_REV)) {
+        if (!s_water_abort) INFO("Oscillate: nozzle PWM setup failed");
+        valve_goto_ex(VALVE_CLOSED_DEG, 2.0f, 10000, false, -1);
+        s_valve_last_dir = -1;
+        s_water_est_min = 0;
+        return;
+    }
+    int n_dir = +1;
+    chase_motor_apply(&nm, n_dir, NOZZLE_DUTY);
+    int lockout = LOCKOUT_TICKS;
+
+    TickType_t t_start    = xTaskGetTickCount();
+    uint32_t   total_ms   = (uint32_t)duration_min * 60u * 1000u;
+    uint32_t   last_log_s = 0;
+    int        swings     = 0;
+    while (!s_water_abort) {
+        uint32_t elapsed_ms = (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount() - t_start);
+        if (elapsed_ms >= total_ms) break;
+        int rem_min = (int)((total_ms - elapsed_ms + 59999u) / 60000u);
+        s_water_est_min = (rem_min < 1) ? 1 : rem_min;
+
+        vTaskDelay(pdMS_TO_TICKS(TICK_MS));
+        TOUCH_ACTIVITY();
+        if (lockout > 0) lockout--;
+
+        uint16_t n_raw = 0;
+        if (!as5600_read(ADDR_AS5600, &n_raw, NULL, NULL)) continue;
+        float cur_b = n_raw * (360.0f / 4096.0f);
+        float predict_b = fmodf(cur_b + (float)n_dir * LOOKAHEAD_DPS * LOOK_AHEAD_S
+                                + 360.0f, 360.0f);
+        bool at_edge = fmodf(predict_b - arc_lo + 360.0f, 360.0f) > arc_span;
+
+        if (at_edge && lockout == 0) {
+            // Ease the nozzle to a stop, step the valve to the next ring
+            // (in, then out again -- a triangle across the band), swing back.
+            for (int i = 4; i >= 1; i--) {
+                chase_motor_apply(&nm, n_dir, (uint16_t)(NOZZLE_MIN_DUTY * i / 5));
+                vTaskDelay(pdMS_TO_TICKS(20));
+            }
+            chase_motor_apply(&nm, n_dir, 0);
+            if (ring + ring_dir < 0 || ring + ring_dir >= n_rings) ring_dir = -ring_dir;
+            ring += ring_dir;
+            valve_goto_ex(ring_v[ring], 0.8f, 4000, false, s_valve_last_dir);
+            s_valve_last_dir = +1;
+            swings++;
+            INFO("  Oscillate: edge at b=%.1f -> ring %d (%.0f mm, valve %.1f), swing %d",
+                 cur_b, ring + 1, ring_mm[ring], ring_v[ring], swings);
+            if (s_water_abort) break;
+            chase_motor_reverse(&nm, NOZZLE_DUTY);   // duty is 0: coast + kick the other way
+            n_dir = nm.dir;
+            lockout = LOCKOUT_TICKS;
+        } else if (lockout == 0) {
+            float d = (n_dir > 0) ? fmodf(arc_lo + arc_span - cur_b + 360.0f, 360.0f)
+                                  : fmodf(cur_b - arc_lo + 360.0f, 360.0f);
+            if (d > arc_span + 5.0f) d = 0.0f;
+            float t    = fminf(1.0f, d / ease_deg);
+            float ease = 0.5f * (1.0f - cosf((float)M_PI * t));
+            chase_motor_apply(&nm, n_dir, (uint16_t)((float)NOZZLE_MIN_DUTY
+                              + ease * (float)(NOZZLE_DUTY - NOZZLE_MIN_DUTY)));
+        }
+        s_nozzle_last_dir = n_dir;
+
+        uint32_t now_s = elapsed_ms / 1000u;
+        if (now_s >= last_log_s + 10u) {
+            INFO("  Oscillate t=%us b=%.1f(%+d) ring %d valve %.1f rem=%d min",
+                 (unsigned)now_s, cur_b, n_dir, ring + 1, ring_v[ring], s_water_est_min);
+            last_log_s = now_s;
+        }
+    }
+
+    chase_motor_apply(&nm, 0, 0);
+    chase_motor_teardown(&nm);
+    valve_goto_ex(VALVE_CLOSED_DEG, 2.0f, 10000, false, -1);
+    s_valve_last_dir = -1;
+    s_water_est_min = 0;
+    s_eta_anchor_tick = 0;
+    INFO("Oscillate: complete (%u s elapsed, %d swings)",
+         (unsigned)pdTICKS_TO_MS(xTaskGetTickCount() - t_start) / 1000u, swings);
+}
+
 static void phase_chase_water_zone(void)
 {
     const bool steady = s_chase_steady;   // b549: oscillate variant
@@ -10881,6 +11015,10 @@ static void phase_chase_water_zone(void)
          arc_start, arc_end, arc_deg, min_throw, max_throw);
     INFO("Chase: safe arc [%.1f, %.1f], safe throw [%.0f, %.0f] mm",
          arc_safe_lo, arc_safe_hi, throw_safe_lo, throw_safe_hi);
+    if (steady) {   // b550: stepped-valve swing instead of the PWM wander below
+        phase_oscillate_run(arc_safe_lo, arc_safe_span, min_throw, max_throw, duration_min);
+        return;
+    }
 
     sensor_rail_on();
     motor_rail_on();
@@ -14374,7 +14512,9 @@ static void phase_water_zone_mode(int mode)
     s_water_vol_exp_l  = 0.0f;
     if (mode == WATER_MODE_CHASE) {
         // b311: chase mode bypasses the depth/ring/pass machinery entirely.
+        watering_log_capture_start();   // b550: chase/oscillate runs show in /zone/last_log too
         phase_chase_water_zone();
+        watering_log_capture_stop();
         return;
     }
     if (mode==99) {
