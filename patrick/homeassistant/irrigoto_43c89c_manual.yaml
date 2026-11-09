@@ -52,6 +52,14 @@ input_number:
     unit_of_measurement: ft
     initial: 4
     icon: mdi:arrow-expand-vertical
+  oto_sweep_minutes:
+    name: OtO Sweep Minutes
+    min: 1
+    max: 10
+    step: 1
+    unit_of_measurement: min
+    initial: 3
+    icon: mdi:timer-outline
   oto_step_ft:
     name: OtO Throw Step
     min: 0.25
@@ -80,7 +88,7 @@ rest_command:
     content_type: "application/x-www-form-urlencoded"
     payload: >-
       {% set m = mode | default('smooth') | string %}
-      {% set codes = {'pulse':'1','quarter':'2','double':'3','gentle':'5','gentle_quarter':'6','smooth':'7','serpentine':'8','chase':'c','demo':'d'} %}
+      {% set codes = {'pulse':'1','quarter':'2','double':'3','gentle':'5','gentle_quarter':'6','smooth':'7','serpentine':'8','chase':'c','oscillate':'o','demo':'d'} %}
       id={{ zone_id }}&mode={{ codes[m] if m in codes else m }}{% if duration is defined %}&duration={{ duration }}{% endif %}
   # b546: water an ad-hoc sector (no saved zone): bearing+width in degrees,
   # near/far in mm. The firmware builds the polygon in RAM and runs it through
@@ -91,7 +99,7 @@ rest_command:
     content_type: "application/x-www-form-urlencoded"
     payload: >-
       {% set m = mode | default('serpentine') | string %}
-      {% set codes = {'pulse':'1','quarter':'2','double':'3','gentle':'5','gentle_quarter':'6','smooth':'7','serpentine':'8','chase':'c','demo':'d'} %}
+      {% set codes = {'pulse':'1','quarter':'2','double':'3','gentle':'5','gentle_quarter':'6','smooth':'7','serpentine':'8','chase':'c','oscillate':'o','demo':'d'} %}
       bearing={{ bearing }}&width={{ width }}&near={{ near_mm }}&far={{ far_mm }}&mode={{ codes[m] if m in codes else m }}{% if duration is defined %}&duration={{ duration }}{% endif %}
   oto_water_cancel:
     url: "http://{{ states('input_text.oto_ip') }}/zone/water/cancel"
@@ -124,14 +132,16 @@ script:
   # Sweep back and forth across a sector centred on the current aim: the
   # bearing slider is the centre, Sweep Width the angle, Sweep Depth the
   # radial band (half in front of the throw slider's distance, half behind).
-  # Serpentine glides continuously ring by ring; pass mode: chase and a
-  # duration (1-10 min) for a timed romp instead of a metered depth.
+  # Default mode is oscillate (b549): a steady lawn-sprinkler swing, nozzle
+  # side to side and valve in and out, for Sweep Minutes. Pass
+  # mode: serpentine for a metered 1/8" pass (rings, ~30 s on a small
+  # sector) or mode: chase for the playful random version.
   oto_sweep:
     alias: "OtO: sweep here"
     mode: single
     fields:
-      mode:     { description: "serpentine | smooth | pulse | gentle | chase", example: serpentine }
-      duration: { description: "minutes, chase mode only (1-10)", example: 5 }
+      mode:     { description: "oscillate | serpentine | smooth | pulse | gentle | chase", example: oscillate }
+      duration: { description: "minutes, oscillate/chase only (1-10); default Sweep Minutes", example: 5 }
     sequence:
       - variables:
           centre_ft: "{{ states('input_number.oto_throw_ft') | float }}"
@@ -149,8 +159,8 @@ script:
           width:   "{{ states('input_number.oto_sweep_width') | int }}"
           near_mm: "{{ (near_ft * 304.8) | round(0) }}"
           far_mm:  "{{ (far_ft * 304.8) | round(0) }}"
-          mode:    "{{ mode | default('serpentine') }}"
-          duration: "{{ duration | default(0) }}"
+          mode:    "{{ mode | default('oscillate') }}"
+          duration: "{{ duration | default(states('input_number.oto_sweep_minutes') | int) }}"
 
   oto_up:
     alias: "OtO: throw further"

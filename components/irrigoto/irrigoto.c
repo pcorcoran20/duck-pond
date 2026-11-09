@@ -311,6 +311,11 @@ static volatile int  s_water_cleanup_pass = 0; // 0=not in cleanup, N=cleanup pa
 #define CHASE_MIN_MINUTES      1
 #define CHASE_MAX_MINUTES      10
 static int           s_chase_duration_min = 0; // 1..10; only valid when s_web_water_mode == WATER_MODE_CHASE
+// b549: 'o' = oscillate -- chase's continuous two-motor motion with the
+// random DASH/SINUSOID character states off and the safe-band insets scaled
+// to the sector. A steady lawn-sprinkler swing: nozzle back and forth across
+// the arc, valve slowly in and out across the throw band, for N minutes.
+static bool          s_chase_steady = false;
 // EXP (2026-06-06): lash experiment (reversal dead-time / hysteresis). Runs in
 // its own PRO_CPU task like watering; mutually exclusive with watering + cal.
 static volatile bool s_exp_running = false;
@@ -10786,6 +10791,7 @@ static void water_serpentine_passes(
 
 static void phase_chase_water_zone(void)
 {
+    const bool steady = s_chase_steady;   // b549: oscillate variant
     int duration_min = s_chase_duration_min;
     if (duration_min < CHASE_MIN_MINUTES) duration_min = CHASE_MIN_MINUTES;
     if (duration_min > CHASE_MAX_MINUTES) duration_min = CHASE_MAX_MINUTES;
@@ -10850,8 +10856,14 @@ static void phase_chase_water_zone(void)
     // Inset the safe envelope from the polygon's literal boundaries so the
     // look-ahead reversal triggers a few degrees / mm before water actually
     // spills over the edge.
-    const float ARC_MARGIN_DEG    = 3.0f;
-    const float THROW_MARGIN_MM   = 250.0f;
+    // b549: steady mode scales the insets to the sector so a 10 deg x 3 ft
+    // sweep still has room to swing (3 deg + 250 mm each side would eat it).
+    float ARC_MARGIN_DEG    = 3.0f;
+    float THROW_MARGIN_MM   = 250.0f;
+    if (steady) {
+        ARC_MARGIN_DEG  = fminf(3.0f,   arc_deg * 0.10f);
+        THROW_MARGIN_MM = fminf(250.0f, (max_throw - min_throw) * 0.15f);
+    }
     float arc_safe_lo  = fmodf(arc_start + ARC_MARGIN_DEG + 360.0f, 360.0f);
     float arc_safe_hi  = fmodf(arc_end   - ARC_MARGIN_DEG + 360.0f, 360.0f);
     float arc_safe_span = fmodf(arc_safe_hi - arc_safe_lo + 360.0f, 360.0f);
@@ -10863,8 +10875,8 @@ static void phase_chase_water_zone(void)
         throw_safe_hi = max_throw - 100.0f;
     }
 
-    INFO("=== Chase mode: zone %u for %d min ===",
-         (unsigned)s_water_zone_id, duration_min);
+    INFO("=== %s mode: zone %u for %d min ===",
+         steady ? "Oscillate" : "Chase", (unsigned)s_water_zone_id, duration_min);
     INFO("Chase: arc [%.1f, %.1f] (span %.1f), throw [%.0f, %.0f] mm",
          arc_start, arc_end, arc_deg, min_throw, max_throw);
     INFO("Chase: safe arc [%.1f, %.1f], safe throw [%.0f, %.0f] mm",
@@ -10919,7 +10931,10 @@ static void phase_chase_water_zone(void)
     const uint16_t VALVE_MIN_DUTY  = 90;
     // Distance over which the cosine ramp goes from MIN to RUN. Past
     // EASE_DEG from a boundary -> full duty; inside EASE_DEG -> easing.
-    const float    NOZZLE_EASE_DEG = 15.0f;
+    // b549: steady mode eases over a third of the arc so a narrow sector
+    // is not stuck at NOZZLE_MIN_DUTY end to end.
+    const float    NOZZLE_EASE_DEG = steady ? fminf(15.0f, fmaxf(3.0f, arc_safe_span / 3.0f))
+                                            : 15.0f;
     const float    VALVE_EASE_DEG  = 6.0f;
     // Tick + look-ahead: 50 ms tick, 250 ms look-ahead means we reverse
     // when we'd cross the safe boundary within the next 5 ticks.
@@ -11091,7 +11106,7 @@ static void phase_chase_water_zone(void)
         // Maybe trigger a new special state from NORMAL. b315: probabilities
         // boosted so the cooldown floor is the dominant gate -- expect a
         // special event very shortly after each cooldown expires.
-        if (cstate == CS_NORMAL && nm_lockout == 0 &&
+        if (!steady && cstate == CS_NORMAL && nm_lockout == 0 &&   // b549: no specials when steady
             since_special >= SPECIAL_COOLDOWN_MS) {
             float throw_span = throw_safe_hi - throw_safe_lo;
             // "Valve fairly open" -- the dash trigger per user spec.
@@ -15636,6 +15651,7 @@ static esp_err_t zone_water_handler(httpd_req_t *req)
                mode_s[0]=='7'                 ? 7  :
                mode_s[0]=='8'                 ? 8  :
                mode_s[0]=='c'||mode_s[0]=='C' ? WATER_MODE_CHASE :
+               mode_s[0]=='o'||mode_s[0]=='O' ? WATER_MODE_CHASE :   // b549 oscillate
                mode_s[0]=='d'||mode_s[0]=='D' ? 99 : 0;
     uint16_t zone_id = adhoc ? ZONE_ID_ADHOC : (uint16_t)atoi(id_s);
     if(mode==0){
@@ -15672,6 +15688,7 @@ static esp_err_t zone_water_handler(httpd_req_t *req)
     if (adhoc) s_adhoc_prev_zone = s_water_zone_id;   // b546: restored in water_task
     s_water_zone_id  = zone_id;
     s_chase_duration_min = (mode == WATER_MODE_CHASE) ? duration_min : 0;
+    s_chase_steady = (mode == WATER_MODE_CHASE) && (mode_s[0]=='o' || mode_s[0]=='O');   // b549
     // Optional depth target in eighths of an inch (1..8 = 1/8".. 1"). Absent or
     // out-of-range -> 0 = legacy digit-encoded depth. Chase ignores depth.
     char depth_q[4]={0};
