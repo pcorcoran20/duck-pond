@@ -138,6 +138,11 @@ script:
           depth_ft:  "{{ states('input_number.oto_sweep_depth_ft') | float }}"
           near_ft:   "{{ [centre_ft - depth_ft / 2, 2] | max }}"
           far_ft:    "{{ [centre_ft + depth_ft / 2, 20] | min }}"
+      # If a joystick tap is still settling, let it finish first: the device
+      # has no interlock between /aim/throw and /zone/water, and two movers
+      # on the same motors would fight over the pre-check aim.
+      - wait_template: "{{ is_state('script.oto_aim', 'off') }}"
+        timeout: "00:00:10"
       - action: rest_command.oto_water_sector
         data:
           bearing: "{{ states('input_number.oto_bearing') | int }}"
