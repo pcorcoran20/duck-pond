@@ -780,7 +780,10 @@ static char uart_getchar(uint32_t timeout_ms)
     do {
         // Check UART
         uint8_t c = 0;
-        if (uart_read_bytes(UART_NUM_0, &c, 1, pdMS_TO_TICKS(20)) > 0) {
+        // b548: no driver in ESPHome builds (b547) -- uart_read_bytes() would
+        // log "uart driver error" on every poll and flood the run log.
+        if (uart_is_driver_installed(UART_NUM_0) &&
+            uart_read_bytes(UART_NUM_0, &c, 1, pdMS_TO_TICKS(20)) > 0) {
             return (char)c;
         }
         // Check TCP socket
@@ -12228,7 +12231,16 @@ static void phase_water_zone(void)
     float pressure_scale = 1.0f;
     // b424: serpentine dry rehearsal must not open the valve -- skip the 12s
     // full-open supply check (pressure_scale stays 1.0; no water flows).
-    if (!demo_mode && !serpentine_dry && psi_max > 0.5f) {
+    // b548: skip it for an ad-hoc sweep sector too. The sector is centred on
+    // a joystick aim that was made without supply compensation, and a 4 ft
+    // sweep that opens with 12 s of full-open (20 ft+) spray over the aim
+    // bearing lands on the neighbours, not the patch. Serpentine ring
+    // placement does not use pressure_scale (b428), so nothing is lost.
+    bool adhoc_sector = (s_water_zone_id == ZONE_ID_ADHOC);
+    if (adhoc_sector)
+        INFO("Sweep sector: skipping full-open supply check "
+             "(pressure_scale 1.0 -- matches the joystick aim)");
+    if (!demo_mode && !serpentine_dry && !adhoc_sector && psi_max > 0.5f) {
         valve_goto(VALVE_OPEN_DEG, 1.0f, 8000, false);
         vTaskDelay(pdMS_TO_TICKS(1500));   // settle after valve open
 
