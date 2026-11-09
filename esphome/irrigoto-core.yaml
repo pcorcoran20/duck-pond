@@ -672,6 +672,7 @@ select:
         - "Pulse"
         - "Gentle"
         - "Smooth"
+        - "Serpentine"   # b546: the firmware has published this since b431; HA logged "Invalid option"
 
 switch:
   # Auto-sleep enable. Toggling this calls irrigoto_set_auto_sleep_enabled(),

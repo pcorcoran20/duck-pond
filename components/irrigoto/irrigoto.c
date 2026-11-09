@@ -746,6 +746,18 @@ static void uart_setup(void)
     if (uart_is_driver_installed(UART_NUM_0)) {
         return;
     }
+#ifdef ESPHOME_COMPONENT
+    // b547: production builds run with logger baud 0, so ESPHome installs no
+    // UART driver -- and neither do we. Installing one here enabled RX on a
+    // J2 pin nobody is driving, and every watering loop treats ANY byte from
+    // uart_getchar() as "operator pressed a key: abort". On 43c89c a stray
+    // byte killed a sweep 37 ms into its first leg (status "cancelled", no
+    // one touched anything). Without a driver uart_read_bytes() fails and
+    // uart_getchar() is a no-op; the b512 UART console writes the FIFO
+    // directly and is unaffected. A tethered debug build (logger_baud
+    // 115200) still gets the logger's driver and the 'q'-to-abort console.
+    return;
+#endif
     uart_config_t cfg = {
         .baud_rate  = 115200,
         .data_bits  = UART_DATA_8_BITS,
@@ -15639,6 +15651,7 @@ static esp_err_t zone_water_handler(httpd_req_t *req)
         return ESP_OK;
     }
     s_water_abort = false;
+    if (uart_is_driver_installed(UART_NUM_0)) uart_flush_input(UART_NUM_0);   // b547: stale bytes abort runs
     s_water_status_code   = WATER_STATUS_COMPLETED;
     s_water_run_had_flow  = false;
     s_water_no_flow_streak = 0;
@@ -19979,6 +19992,7 @@ void irrigoto_last_water_status_str(char *buf, size_t len)
 void irrigoto_last_water_zone_name(char *buf, size_t len)
 {
     if (buf == NULL || len == 0) return;
+    if (s_last_water_zone_id == ZONE_ID_ADHOC) { snprintf(buf, len, "Sweep sector"); return; }   // b546
     char lfs_name[32] = {0};
     if (storage_ready()) {
         zone_perimeter_t _tmp;
