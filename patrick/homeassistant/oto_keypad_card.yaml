@@ -1,0 +1,9 @@
+# Keyboard control for the OtO joystick.
+#
+# 1. Copy www/oto_keypad_card.js to  config/www/oto_keypad_card.js
+# 2. Settings -> Dashboards -> top-right menu -> Resources -> Add resource
+#      URL: /local/oto_keypad_card.js     Resource type: JavaScript module
+#    then hard-reload the browser tab (Ctrl/Cmd+Shift+R).
+# 3. Edit dashboard -> Add card -> Manual -> paste:
+type: custom:oto-keypad-card
+title: OtO keyboard

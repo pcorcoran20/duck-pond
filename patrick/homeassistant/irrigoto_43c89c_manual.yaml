@@ -7,6 +7,14 @@ input_text:
     name: OtO IP
     initial: "192.168.1.50"   # <- change to your reservation
 
+input_boolean:
+  # Mirror: swap left/right and further/closer. Flip it on when you are
+  # standing on the far side of the patch facing the sprinkler, so the
+  # arrows match what you see. Keyboard: M.
+  oto_mirror:
+    name: OtO Mirror controls
+    icon: mdi:flip-horizontal
+
 input_number:
   oto_bearing:
     name: OtO Bearing
@@ -60,6 +68,15 @@ input_number:
     unit_of_measurement: min
     initial: 3
     icon: mdi:timer-outline
+  # Swing: how many Left/Right presses either side of the mark the nozzle
+  # swings (width = 2 x presses x Bearing Step), at the joystick's throw.
+  oto_swing_presses:
+    name: OtO Swing Presses
+    min: 1
+    max: 12
+    step: 1
+    initial: 3
+    icon: mdi:arrow-left-right
   oto_step_ft:
     name: OtO Throw Step
     min: 0.25
@@ -100,7 +117,7 @@ rest_command:
     payload: >-
       {% set m = mode | default('serpentine') | string %}
       {% set codes = {'pulse':'1','quarter':'2','double':'3','gentle':'5','gentle_quarter':'6','smooth':'7','serpentine':'8','chase':'c','oscillate':'o','demo':'d'} %}
-      bearing={{ bearing }}&width={{ width }}&near={{ near_mm }}&far={{ far_mm }}&mode={{ codes[m] if m in codes else m }}{% if duration is defined %}&duration={{ duration }}{% endif %}
+      bearing={{ bearing }}&width={{ width }}&near={{ near_mm }}&far={{ far_mm }}&mode={{ codes[m] if m in codes else m }}{% if duration is defined %}&duration={{ duration }}{% endif %}{% if swing is defined %}&swing={{ swing }}{% endif %}
   oto_water_cancel:
     url: "http://{{ states('input_text.oto_ip') }}/zone/water/cancel"
     method: POST
@@ -162,6 +179,8 @@ script:
           mode:    "{{ mode | default('oscillate') }}"
           duration: "{{ duration | default(states('input_number.oto_sweep_minutes') | int) }}"
 
+  # Joystick taps. With input_boolean.oto_mirror on, Up/Down and Left/Right
+  # swap, so the arrows match the view from the far side of the patch.
   oto_up:
     alias: "OtO: throw further"
     mode: queued
@@ -170,7 +189,9 @@ script:
         target: { entity_id: input_number.oto_throw_ft }
         data:
           value: >-
-            {{ [states('input_number.oto_throw_ft') | float + states('input_number.oto_step_ft') | float, 40] | min }}
+            {% set d = states('input_number.oto_step_ft') | float %}
+            {% set d = -d if is_state('input_boolean.oto_mirror', 'on') else d %}
+            {{ [[states('input_number.oto_throw_ft') | float + d, 2] | max, 20] | min }}
       - action: script.oto_aim
 
   oto_down:
@@ -181,7 +202,9 @@ script:
         target: { entity_id: input_number.oto_throw_ft }
         data:
           value: >-
-            {{ [states('input_number.oto_throw_ft') | float - states('input_number.oto_step_ft') | float, 2] | max }}
+            {% set d = states('input_number.oto_step_ft') | float %}
+            {% set d = -d if is_state('input_boolean.oto_mirror', 'on') else d %}
+            {{ [[states('input_number.oto_throw_ft') | float - d, 2] | max, 20] | min }}
       - action: script.oto_aim
 
   oto_left:
@@ -191,7 +214,10 @@ script:
       - action: input_number.set_value
         target: { entity_id: input_number.oto_bearing }
         data:
-          value: "{{ (states('input_number.oto_bearing') | int - states('input_number.oto_step_deg') | int) % 360 }}"
+          value: >-
+            {% set d = states('input_number.oto_step_deg') | int %}
+            {% set d = -d if is_state('input_boolean.oto_mirror', 'on') else d %}
+            {{ (states('input_number.oto_bearing') | int - d) % 360 }}
       - action: script.oto_aim
 
   oto_right:
@@ -201,8 +227,41 @@ script:
       - action: input_number.set_value
         target: { entity_id: input_number.oto_bearing }
         data:
-          value: "{{ (states('input_number.oto_bearing') | int + states('input_number.oto_step_deg') | int) % 360 }}"
+          value: >-
+            {% set d = states('input_number.oto_step_deg') | int %}
+            {% set d = -d if is_state('input_boolean.oto_mirror', 'on') else d %}
+            {{ (states('input_number.oto_bearing') | int + d) % 360 }}
       - action: script.oto_aim
+
+  oto_mirror_toggle:
+    alias: "OtO: toggle mirror"
+    sequence:
+      - action: input_boolean.toggle
+        target: { entity_id: input_boolean.oto_mirror }
+
+  # Swing: left/right only, at the joystick's throw, Swing Presses x Bearing
+  # Step either side of the mark, for Sweep Minutes. Keyboard: W.
+  oto_swing:
+    alias: "OtO: swing left/right here"
+    mode: single
+    fields:
+      duration: { description: "minutes (1-10); default Sweep Minutes", example: 3 }
+    sequence:
+      - variables:
+          half_deg: "{{ states('input_number.oto_swing_presses') | int * states('input_number.oto_step_deg') | int }}"
+          width:    "{{ [[half_deg * 2, 10] | max, 300] | min }}"
+          throw_mm: "{{ states('input_number.oto_throw_ft') | float * 304.8 }}"
+      - wait_template: "{{ is_state('script.oto_aim', 'off') }}"
+        timeout: "00:00:10"
+      - action: rest_command.oto_water_sector
+        data:
+          bearing:  "{{ states('input_number.oto_bearing') | int }}"
+          width:    "{{ width }}"
+          near_mm:  "{{ (throw_mm - 160) | round(0) }}"
+          far_mm:   "{{ (throw_mm + 160) | round(0) }}"
+          mode:     oscillate
+          duration: "{{ duration | default(states('input_number.oto_sweep_minutes') | int) }}"
+          swing:    1
 
   # Hands-free: run a saved zone from the OtO's own zone list.
   oto_water_zone:

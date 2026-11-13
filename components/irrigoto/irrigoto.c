@@ -316,6 +316,9 @@ static int           s_chase_duration_min = 0; // 1..10; only valid when s_web_w
 // to the sector. A steady lawn-sprinkler swing: nozzle back and forth across
 // the arc, valve slowly in and out across the throw band, for N minutes.
 static bool          s_chase_steady = false;
+// b551: swing=1 on an oscillate request -- one ring at the band centre, no
+// valve steps: the nozzle just swings left/right at the joystick's throw.
+static bool          s_osc_single_ring = false;
 // EXP (2026-06-06): lash experiment (reversal dead-time / hysteresis). Runs in
 // its own PRO_CPU task like watering; mutually exclusive with watering + cal.
 static volatile bool s_exp_running = false;
@@ -10809,9 +10812,14 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
     int n_rings = (int)((t_hi - t_lo) / 250.0f + 0.5f) + 1;   // ~10 in apart
     if (n_rings < 2) n_rings = 2;
     if (n_rings > 8) n_rings = 8;
+    if (s_osc_single_ring) {           // b551: swing -- hold the band centre
+        n_rings = 1;
+        t_lo = t_hi = (min_throw + max_throw) * 0.5f;
+    }
     float ring_mm[8], ring_v[8];
     for (int i = 0; i < n_rings; i++) {
-        ring_mm[i] = t_lo + (t_hi - t_lo) * (float)i / (float)(n_rings - 1);
+        ring_mm[i] = (n_rings > 1) ? t_lo + (t_hi - t_lo) * (float)i / (float)(n_rings - 1)
+                                   : t_lo;
         float v = cal_throw_to_valve_deg(ring_mm[i]);
         if (v < VALVE_CAL_START_DEG) v = VALVE_CAL_START_DEG;
         if (v > VALVE_OPEN_DEG)      v = VALVE_OPEN_DEG;
@@ -10876,22 +10884,26 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
         bool at_edge = fmodf(predict_b - arc_lo + 360.0f, 360.0f) > arc_span;
 
         if (at_edge && lockout == 0) {
-            // Ease the nozzle to a stop, step the valve to the next ring
-            // (in, then out again -- a triangle across the band), swing back.
-            for (int i = 4; i >= 1; i--) {
-                chase_motor_apply(&nm, n_dir, (uint16_t)(NOZZLE_MIN_DUTY * i / 5));
-                vTaskDelay(pdMS_TO_TICKS(20));
-            }
-            chase_motor_apply(&nm, n_dir, 0);
-            if (ring + ring_dir < 0 || ring + ring_dir >= n_rings) ring_dir = -ring_dir;
-            ring += ring_dir;
-            valve_goto_ex(ring_v[ring], 0.8f, 4000, false, s_valve_last_dir);
-            s_valve_last_dir = +1;
             swings++;
-            INFO("  Oscillate: edge at b=%.1f -> ring %d (%.0f mm, valve %.1f), swing %d",
-                 cur_b, ring + 1, ring_mm[ring], ring_v[ring], swings);
-            if (s_water_abort) break;
-            chase_motor_reverse(&nm, NOZZLE_DUTY);   // duty is 0: coast + kick the other way
+            if (n_rings > 1) {
+                // Ease the nozzle to a stop, step the valve to the next ring
+                // (in, then out again -- a triangle across the band), swing back.
+                for (int i = 4; i >= 1; i--) {
+                    chase_motor_apply(&nm, n_dir, (uint16_t)(NOZZLE_MIN_DUTY * i / 5));
+                    vTaskDelay(pdMS_TO_TICKS(20));
+                }
+                chase_motor_apply(&nm, n_dir, 0);
+                if (ring + ring_dir < 0 || ring + ring_dir >= n_rings) ring_dir = -ring_dir;
+                ring += ring_dir;
+                valve_goto_ex(ring_v[ring], 0.8f, 4000, false, s_valve_last_dir);
+                s_valve_last_dir = +1;
+                INFO("  Oscillate: edge at b=%.1f -> ring %d (%.0f mm, valve %.1f), swing %d",
+                     cur_b, ring + 1, ring_mm[ring], ring_v[ring], swings);
+                if (s_water_abort) break;
+            } else if ((swings % 10) == 1) {
+                INFO("  Swing: edge at b=%.1f, swing %d", cur_b, swings);
+            }
+            chase_motor_reverse(&nm, NOZZLE_DUTY);   // smooth U-turn (coast + kick when duty is 0)
             n_dir = nm.dir;
             lockout = LOCKOUT_TICKS;
         } else if (lockout == 0) {
@@ -15829,6 +15841,11 @@ static esp_err_t zone_water_handler(httpd_req_t *req)
     s_water_zone_id  = zone_id;
     s_chase_duration_min = (mode == WATER_MODE_CHASE) ? duration_min : 0;
     s_chase_steady = (mode == WATER_MODE_CHASE) && (mode_s[0]=='o' || mode_s[0]=='O');   // b549
+    {
+        char sw_q[4]={0};
+        httpd_query_key_value(body,"swing",sw_q,sizeof(sw_q));
+        s_osc_single_ring = s_chase_steady && adhoc && sw_q[0]=='1';   // b551
+    }
     // Optional depth target in eighths of an inch (1..8 = 1/8".. 1"). Absent or
     // out-of-range -> 0 = legacy digit-encoded depth. Chase ignores depth.
     char depth_q[4]={0};

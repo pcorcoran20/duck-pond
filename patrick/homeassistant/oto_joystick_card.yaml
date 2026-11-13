@@ -26,6 +26,10 @@ cards:
         name: Sweep
         icon: mdi:sine-wave
         tap_action: { action: perform-action, perform_action: script.oto_sweep }
+      - type: button
+        name: Swing
+        icon: mdi:arrow-left-right
+        tap_action: { action: perform-action, perform_action: script.oto_swing }
   - type: horizontal-stack
     cards:
       - type: button
@@ -46,9 +50,14 @@ cards:
         tap_action: { action: perform-action, perform_action: script.oto_right }
   - type: entities
     entities:
+      - entity: input_boolean.oto_mirror
+      - entity: input_number.oto_swing_presses
       - entity: input_number.oto_sweep_width
       - entity: input_number.oto_sweep_depth_ft
       - entity: input_number.oto_sweep_minutes
       - entity: input_number.oto_step_deg
       - entity: input_number.oto_step_ft
       - entity: input_text.oto_ip
+
+# Keyboard control: see oto_keypad_card.yaml (needs www/oto_keypad_card.js
+# installed as a dashboard resource first).
