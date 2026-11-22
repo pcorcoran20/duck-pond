@@ -15,6 +15,7 @@
  *
  *  Mirror is applied inside the HA scripts, so buttons and keys agree.
  */
+const OTO_CARD_VERSION = 3;
 const OTO_KEYS = {
   ArrowLeft: 'oto_left',  ArrowRight: 'oto_right',
   ArrowUp:   'oto_up',    ArrowDown:  'oto_down',
@@ -130,8 +131,9 @@ class OtoKeypadCard extends HTMLElement {
     this._set('rotate',   `rotate ${l} / ${r} by ${stepDeg}\u00b0`);
     this._set('updown',   `${u} / ${d} by ${stepFt} ft`);
     this._set('swing',    `Swing ${presses} presses either side`);
-    this._set('hint',     this._last ? `last key: ${this._last}`
-                                     : 'Click anywhere on the page first, then use the keys.');
+    this._set('hint',     (this._last ? `last key: ${this._last}`
+                                      : 'Click anywhere on the page first, then use the keys.')
+                          + `  \u00b7 card v${OTO_CARD_VERSION}`);
     const mirrorColor = mirror ? 'var(--warning-color)' : '';
     if (this._shown.mirrorColor !== mirrorColor) {
       this._shown.mirrorColor = mirrorColor;
