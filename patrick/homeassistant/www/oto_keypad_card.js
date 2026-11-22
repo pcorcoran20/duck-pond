@@ -71,8 +71,48 @@ class OtoKeypadCard extends HTMLElement {
     return st ? st.state : fallback;
   }
 
+  // Build the card ONCE and then only patch the text fields that changed.
+  // HA pushes a new `hass` object several times a second; replacing the
+  // whole <ha-card> each time made translucent / blurred themes flicker.
+  _build() {
+    const title = (this._config && this._config.title) || 'OtO keyboard';
+    this.innerHTML = `
+      <ha-card>
+        <div style="padding:0 16px 16px; font-family:inherit">
+          <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:8px">
+            <span>Bearing <b data-f="bearing"></b></span>
+            <span>Throw <b data-f="throw"></b></span>
+            <span>Step <b data-f="step"></b></span>
+            <span>Watering <b data-f="watering"></b></span>
+            <span data-f="mirror-wrap">Mirror <b data-f="mirror"></b></span>
+          </div>
+          <table style="border-collapse:collapse; line-height:1.7">
+            <tr><td><kbd>\u2190</kbd> <kbd>\u2192</kbd></td><td style="padding-left:12px" data-f="rotate"></td></tr>
+            <tr><td><kbd>\u2191</kbd> <kbd>\u2193</kbd></td><td style="padding-left:12px" data-f="updown"></td></tr>
+            <tr><td><kbd>Enter</kbd> <kbd>Space</kbd></td><td style="padding-left:12px">ON (aim here)</td></tr>
+            <tr><td><kbd>Esc</kbd> <kbd>X</kbd></td><td style="padding-left:12px">OFF</td></tr>
+            <tr><td><kbd>S</kbd></td><td style="padding-left:12px">Sweep the sector</td></tr>
+            <tr><td><kbd>W</kbd></td><td style="padding-left:12px" data-f="swing"></td></tr>
+            <tr><td><kbd>M</kbd></td><td style="padding-left:12px">toggle Mirror</td></tr>
+          </table>
+          <div style="margin-top:8px; color:var(--secondary-text-color); font-size:0.9em" data-f="hint"></div>
+        </div>
+      </ha-card>`;
+    this.querySelector('ha-card').setAttribute('header', title);
+    this._f = {};
+    this.querySelectorAll('[data-f]').forEach((el) => { this._f[el.dataset.f] = el; });
+    this._shown = {};
+  }
+
+  _set(field, text) {
+    if (this._shown[field] === text) return;      // untouched DOM = no repaint
+    this._shown[field] = text;
+    this._f[field].textContent = text;
+  }
+
   _render() {
     if (!this._hass) return;
+    if (!this._f) this._build();
     const mirror  = this._state('input_boolean.oto_mirror') === 'on';
     const bearing = this._state('input_number.oto_bearing');
     const throwFt = this._state('input_number.oto_throw_ft');
@@ -80,33 +120,23 @@ class OtoKeypadCard extends HTMLElement {
     const stepFt  = this._state('input_number.oto_step_ft');
     const presses = this._state('input_number.oto_swing_presses');
     const watering = this._state('binary_sensor.irrigoto_43c89c_irrigoto_watering', 'unknown');
-    const l = mirror ? '→' : '←', r = mirror ? '←' : '→';
+    const l = mirror ? '\u2192' : '\u2190', r = mirror ? '\u2190' : '\u2192';
     const u = mirror ? 'closer' : 'further', d = mirror ? 'further' : 'closer';
-    const title = (this._config && this._config.title) || 'OtO keyboard';
-    this.innerHTML = `
-      <ha-card header="${title}">
-        <div style="padding:0 16px 16px; font-family:inherit">
-          <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:8px">
-            <span>Bearing <b>${bearing}°</b></span>
-            <span>Throw <b>${throwFt} ft</b></span>
-            <span>Step <b>${stepDeg}° / ${stepFt} ft</b></span>
-            <span>Watering <b>${watering}</b></span>
-            <span style="${mirror ? 'color:var(--warning-color)' : ''}">Mirror <b>${mirror ? 'ON' : 'off'}</b></span>
-          </div>
-          <table style="border-collapse:collapse; line-height:1.7">
-            <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td style="padding-left:12px">rotate ${l} / ${r} by ${stepDeg}°</td></tr>
-            <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td style="padding-left:12px">${u} / ${d} by ${stepFt} ft</td></tr>
-            <tr><td><kbd>Enter</kbd> <kbd>Space</kbd></td><td style="padding-left:12px">ON (aim here)</td></tr>
-            <tr><td><kbd>Esc</kbd> <kbd>X</kbd></td><td style="padding-left:12px">OFF</td></tr>
-            <tr><td><kbd>S</kbd></td><td style="padding-left:12px">Sweep the sector</td></tr>
-            <tr><td><kbd>W</kbd></td><td style="padding-left:12px">Swing ${presses} presses either side</td></tr>
-            <tr><td><kbd>M</kbd></td><td style="padding-left:12px">toggle Mirror</td></tr>
-          </table>
-          <div style="margin-top:8px; color:var(--secondary-text-color); font-size:0.9em">
-            ${this._last ? `last key: <b>${this._last}</b>` : 'Click anywhere on the page first, then use the keys.'}
-          </div>
-        </div>
-      </ha-card>`;
+    this._set('bearing',  `${bearing}\u00b0`);
+    this._set('throw',    `${throwFt} ft`);
+    this._set('step',     `${stepDeg}\u00b0 / ${stepFt} ft`);
+    this._set('watering', watering);
+    this._set('mirror',   mirror ? 'ON' : 'off');
+    this._set('rotate',   `rotate ${l} / ${r} by ${stepDeg}\u00b0`);
+    this._set('updown',   `${u} / ${d} by ${stepFt} ft`);
+    this._set('swing',    `Swing ${presses} presses either side`);
+    this._set('hint',     this._last ? `last key: ${this._last}`
+                                     : 'Click anywhere on the page first, then use the keys.');
+    const mirrorColor = mirror ? 'var(--warning-color)' : '';
+    if (this._shown.mirrorColor !== mirrorColor) {
+      this._shown.mirrorColor = mirrorColor;
+      this._f['mirror-wrap'].style.color = mirrorColor;
+    }
   }
 }
 
