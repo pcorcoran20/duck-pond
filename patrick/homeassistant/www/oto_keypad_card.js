@@ -11,17 +11,20 @@
  *    arrows        left / right / further / closer   (script.oto_left ...)
  *    Enter, Space  ON (aim + open)         Esc, X   OFF
  *    S             Sweep                   W        Swing
- *    M             toggle Mirror (input_boolean.oto_mirror)
+ *    H             Hold (stop the swing, keep watering)
+ *    P             Pool clean              M        toggle Mirror
+ *  While a swing/sweep runs, the arrows move it (firmware b552+).
  *
  *  Mirror is applied inside the HA scripts, so buttons and keys agree.
  */
-const OTO_CARD_VERSION = 3;
+const OTO_CARD_VERSION = 4;
 const OTO_KEYS = {
   ArrowLeft: 'oto_left',  ArrowRight: 'oto_right',
   ArrowUp:   'oto_up',    ArrowDown:  'oto_down',
   Enter:     'oto_on',    ' ':        'oto_on',
   Escape:    'oto_off',   x:          'oto_off',
   s:         'oto_sweep', w:          'oto_swing',
+  h:         'oto_hold',  p:          'oto_pool_clean',
   m:         'oto_mirror_toggle',
 };
 
@@ -94,6 +97,8 @@ class OtoKeypadCard extends HTMLElement {
             <tr><td><kbd>Esc</kbd> <kbd>X</kbd></td><td style="padding-left:12px">OFF</td></tr>
             <tr><td><kbd>S</kbd></td><td style="padding-left:12px">Sweep the sector</td></tr>
             <tr><td><kbd>W</kbd></td><td style="padding-left:12px" data-f="swing"></td></tr>
+            <tr><td><kbd>H</kbd></td><td style="padding-left:12px">Hold: stop the swing, keep watering</td></tr>
+            <tr><td><kbd>P</kbd></td><td style="padding-left:12px" data-f="pool"></td></tr>
             <tr><td><kbd>M</kbd></td><td style="padding-left:12px">toggle Mirror</td></tr>
           </table>
           <div style="margin-top:8px; color:var(--secondary-text-color); font-size:0.9em" data-f="hint"></div>
@@ -120,6 +125,7 @@ class OtoKeypadCard extends HTMLElement {
     const stepDeg = this._state('input_number.oto_step_deg');
     const stepFt  = this._state('input_number.oto_step_ft');
     const presses = this._state('input_number.oto_swing_presses');
+    const poolMin = this._state('input_number.oto_pool_minutes');
     const watering = this._state('binary_sensor.irrigoto_43c89c_irrigoto_watering', 'unknown');
     const l = mirror ? '\u2192' : '\u2190', r = mirror ? '\u2190' : '\u2192';
     const u = mirror ? 'closer' : 'further', d = mirror ? 'further' : 'closer';
@@ -128,9 +134,10 @@ class OtoKeypadCard extends HTMLElement {
     this._set('step',     `${stepDeg}\u00b0 / ${stepFt} ft`);
     this._set('watering', watering);
     this._set('mirror',   mirror ? 'ON' : 'off');
-    this._set('rotate',   `rotate ${l} / ${r} by ${stepDeg}\u00b0`);
+    this._set('rotate',   `rotate ${l} / ${r} by ${stepDeg}\u00b0 (moves a running swing too)`);
     this._set('updown',   `${u} / ${d} by ${stepFt} ft`);
     this._set('swing',    `Swing ${presses} presses either side`);
+    this._set('pool',     `Pool clean for ${poolMin} min`);
     this._set('hint',     (this._last ? `last key: ${this._last}`
                                       : 'Click anywhere on the page first, then use the keys.')
                           + `  \u00b7 card v${OTO_CARD_VERSION}`);

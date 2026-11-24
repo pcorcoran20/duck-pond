@@ -319,6 +319,18 @@ static bool          s_chase_steady = false;
 // b551: swing=1 on an oscillate request -- one ring at the band centre, no
 // valve steps: the nozzle just swings left/right at the joystick's throw.
 static bool          s_osc_single_ring = false;
+// b552: live control of a running swing/sweep. Set from the httpd / API
+// task, consumed by the oscillate loop. retarget: the joystick moved while
+// the swing runs -- recentre the arc on the new bearing and shift the ring
+// band to the new throw instead of refusing the aim. hold: stop swinging,
+// park the nozzle on the centre at the band-centre throw and leave the
+// valve OPEN (the run ends like a joystick ON; OFF closes it).
+static volatile bool s_osc_active   = false;
+static volatile bool s_osc_retarget = false;
+static volatile bool s_osc_hold     = false;
+static float         s_osc_new_bearing = 0.0f;
+static float         s_osc_new_throw   = 0.0f;
+static int           s_osc_rings_req   = 0;      // b552: rings=N on /zone/water (0 = auto, 2 = rim only)
 // EXP (2026-06-06): lash experiment (reversal dead-time / hysteresis). Runs in
 // its own PRO_CPU task like watering; mutually exclusive with watering + cal.
 static volatile bool s_exp_running = false;
@@ -10812,6 +10824,7 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
     int n_rings = (int)((t_hi - t_lo) / 250.0f + 0.5f) + 1;   // ~10 in apart
     if (n_rings < 2) n_rings = 2;
     if (n_rings > 8) n_rings = 8;
+    if (s_osc_rings_req >= 2) n_rings = s_osc_rings_req;   // b552: caller's choice (2 = near+far rims only)
     if (s_osc_single_ring) {           // b551: swing -- hold the band centre
         n_rings = 1;
         t_lo = t_hi = (min_throw + max_throw) * 0.5f;
@@ -10828,6 +10841,12 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
     }
     INFO("Oscillate: arc %.1f..%.1f (%.1f deg), %d rings, %d min",
          arc_lo, fmodf(arc_lo + arc_span, 360.0f), arc_span, n_rings, duration_min);
+    // b552: the joystick's throw slider is the band centre (near+far)/2 --
+    // a retarget shifts every ring by the change in it.
+    float band_centre = (min_throw + max_throw) * 0.5f;
+    s_osc_retarget = false;
+    s_osc_hold     = false;
+    s_osc_active   = true;
 
     const uint16_t NOZZLE_DUTY     = 90;
     const uint16_t NOZZLE_MIN_DUTY = 60;
@@ -10856,6 +10875,7 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
         valve_goto_ex(VALVE_CLOSED_DEG, 2.0f, 10000, false, -1);
         s_valve_last_dir = -1;
         s_water_est_min = 0;
+        s_osc_active = false;
         return;
     }
     int n_dir = +1;
@@ -10866,7 +10886,7 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
     uint32_t   total_ms   = (uint32_t)duration_min * 60u * 1000u;
     uint32_t   last_log_s = 0;
     int        swings     = 0;
-    while (!s_water_abort) {
+    while (!s_water_abort && !s_osc_hold) {
         uint32_t elapsed_ms = (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount() - t_start);
         if (elapsed_ms >= total_ms) break;
         int rem_min = (int)((total_ms - elapsed_ms + 59999u) / 60000u);
@@ -10876,6 +10896,40 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
         TOUCH_ACTIVITY();
         if (lockout > 0) lockout--;
 
+        if (s_osc_retarget) {   // b552: joystick moved mid-swing
+            s_osc_retarget = false;
+            float nb = s_osc_new_bearing, nt = s_osc_new_throw;
+            arc_lo = fmodf(nb - arc_span * 0.5f + 720.0f, 360.0f);
+            float delta = nt - band_centre;
+            if (fabsf(delta) > 1.0f) {
+                band_centre = nt;
+                for (int i = 0; i < n_rings; i++) {
+                    ring_mm[i] += delta;
+                    float v = cal_throw_to_valve_deg(ring_mm[i]);
+                    if (v < VALVE_CAL_START_DEG) v = VALVE_CAL_START_DEG;
+                    if (v > VALVE_OPEN_DEG)      v = VALVE_OPEN_DEG;
+                    ring_v[i] = v;
+                }
+                // Ease the nozzle to a stop, step the valve to the shifted
+                // ring, kick the nozzle back up in the same direction.
+                for (int i = 4; i >= 1; i--) {
+                    chase_motor_apply(&nm, n_dir, (uint16_t)(NOZZLE_MIN_DUTY * i / 5));
+                    vTaskDelay(pdMS_TO_TICKS(20));
+                }
+                chase_motor_apply(&nm, n_dir, 0);
+                valve_goto_ex(ring_v[ring], 0.8f, 4000, false, s_valve_last_dir);
+                s_valve_last_dir = +1;
+                chase_motor_apply(&nm, n_dir, (uint16_t)(NOZZLE_DUTY + 60));
+                vTaskDelay(pdMS_TO_TICKS(40));
+                chase_motor_apply(&nm, n_dir, NOZZLE_DUTY);
+                lockout = LOCKOUT_TICKS;
+            }
+            INFO("Oscillate: retarget -> centre %.1f deg, %.0f mm (arc %.1f..%.1f, ring %d valve %.1f)",
+                 nb, band_centre, arc_lo, fmodf(arc_lo + arc_span, 360.0f),
+                 ring + 1, ring_v[ring]);
+            if (s_water_abort) break;
+        }
+
         uint16_t n_raw = 0;
         if (!as5600_read(ADDR_AS5600, &n_raw, NULL, NULL)) continue;
         float cur_b = n_raw * (360.0f / 4096.0f);
@@ -10884,6 +10938,17 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
         bool at_edge = fmodf(predict_b - arc_lo + 360.0f, 360.0f) > arc_span;
 
         if (at_edge && lockout == 0) {
+            // b552: head for the arc's interior rather than blindly reversing.
+            // Normally that IS a reversal; after a retarget the nozzle can be
+            // outside the new arc already heading the right way -- keep going.
+            float off  = fmodf(predict_b - arc_lo + 360.0f, 360.0f);   // > arc_span here
+            int   want = (off - arc_span < 360.0f - off) ? -1 : +1;    // past the CW edge -> go CCW
+            if (want == n_dir) {
+                chase_motor_apply(&nm, n_dir, NOZZLE_DUTY);
+                lockout = LOCKOUT_TICKS;
+                s_nozzle_last_dir = n_dir;
+                continue;
+            }
             swings++;
             if (n_rings > 1) {
                 // Ease the nozzle to a stop, step the valve to the next ring
@@ -10927,12 +10992,29 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
 
     chase_motor_apply(&nm, 0, 0);
     chase_motor_teardown(&nm);
-    valve_goto_ex(VALVE_CLOSED_DEG, 2.0f, 10000, false, -1);
-    s_valve_last_dir = -1;
+    if (s_osc_hold && !s_water_abort) {
+        // b552: hold -- park on the centre mark at the band-centre throw and
+        // leave the water running, exactly where a joystick ON would put it.
+        float centre_b = fmodf(arc_lo + arc_span * 0.5f, 360.0f);
+        float cv = cal_throw_to_valve_deg(band_centre);
+        if (cv < VALVE_CAL_START_DEG) cv = VALVE_CAL_START_DEG;
+        if (cv > VALVE_OPEN_DEG)      cv = VALVE_OPEN_DEG;
+        nozzle_goto(centre_b, 1.5f, 10000, false);
+        s_nozzle_last_dir = -1;
+        valve_goto_ex(cv, 0.8f, 10000, false, s_valve_last_dir);
+        s_valve_last_dir = +1;
+        INFO("Oscillate: HOLD -- parked at %.1f deg / %.0f mm (valve %.1f) with the valve OPEN, %d swings",
+             centre_b, band_centre, cv, swings);
+    } else {
+        valve_goto_ex(VALVE_CLOSED_DEG, 2.0f, 10000, false, -1);
+        s_valve_last_dir = -1;
+        INFO("Oscillate: complete (%u s elapsed, %d swings)",
+             (unsigned)pdTICKS_TO_MS(xTaskGetTickCount() - t_start) / 1000u, swings);
+    }
+    s_osc_hold   = false;
+    s_osc_active = false;
     s_water_est_min = 0;
     s_eta_anchor_tick = 0;
-    INFO("Oscillate: complete (%u s elapsed, %d swings)",
-         (unsigned)pdTICKS_TO_MS(xTaskGetTickCount() - t_start) / 1000u, swings);
 }
 
 static void phase_chase_water_zone(void)
@@ -15733,6 +15815,23 @@ static esp_err_t zone_water_cancel_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// b552: POST /zone/water/hold -- stop a running swing/sweep but keep watering:
+// the nozzle parks on the centre mark at the band-centre throw with the
+// valve open. 409 when nothing is swinging (cancel / OFF are unchanged).
+static esp_err_t zone_water_hold_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/json");
+    HTTP_CONN_CLOSE(req);
+    if (!s_osc_active) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_sendstr(req, "{\"ok\":false,\"error\":\"no swing running\"}");
+        return ESP_OK;
+    }
+    s_osc_hold = true;
+    httpd_resp_sendstr(req, "{\"ok\":true}");
+    return ESP_OK;
+}
+
 // b546: build the ad-hoc sector polygon: an arc at far_mm from bearing-width/2
 // to bearing+width/2, back along an arc at near_mm. Points are in walk order
 // (walk_idx 0..n-1) so every polygon routine sees the intended shape. Near is
@@ -15845,6 +15944,11 @@ static esp_err_t zone_water_handler(httpd_req_t *req)
         char sw_q[4]={0};
         httpd_query_key_value(body,"swing",sw_q,sizeof(sw_q));
         s_osc_single_ring = s_chase_steady && adhoc && sw_q[0]=='1';   // b551
+        char rg_q[4]={0};
+        httpd_query_key_value(body,"rings",rg_q,sizeof(rg_q));
+        s_osc_rings_req = atoi(rg_q);                                   // b552: pool clean rim loop
+        if (s_osc_rings_req < 0) s_osc_rings_req = 0;
+        if (s_osc_rings_req > 8) s_osc_rings_req = 8;
     }
     // Optional depth target in eighths of an inch (1..8 = 1/8".. 1"). Absent or
     // out-of-range -> 0 = legacy digit-encoded depth. Chase ignores depth.
@@ -19584,7 +19688,7 @@ static void zone_web_start(void)
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
     cfg.server_port      = ZONE_WEB_PORT;
     cfg.ctrl_port        = ZONE_WEB_CTRL_PORT;
-    cfg.max_uri_handlers  = 80;  // b543: 79 -> 80 (/api/log GET); b543: 77 -> 79 (/wifi/scan GET, /wifi/save POST); b530: 76 -> 77 (/api/led GET); b525: 74 -> 76 (/api/winter GET+POST); b522: 72 -> 74 (/api/fault_hold GET+POST); b512: 70 -> 72 (/api/uart_log GET+POST); b489: 68 -> 70, keeping the 2-slot margin over
+    cfg.max_uri_handlers  = 82;  // b552: 80 -> 82 (/zone/water/hold POST, keeps the margin); b543: 79 -> 80 (/api/log GET); b543: 77 -> 79 (/wifi/scan GET, /wifi/save POST); b530: 76 -> 77 (/api/led GET); b525: 74 -> 76 (/api/winter GET+POST); b522: 72 -> 74 (/api/fault_hold GET+POST); b512: 70 -> 72 (/api/uart_log GET+POST); b489: 68 -> 70, keeping the 2-slot margin over
                                  // the _Static_assert below.
                                  // MUST be set before httpd_start (cfg is copied there);
                                  // headroom over uris[] count -- _Static_assert below guards it.
@@ -19657,6 +19761,7 @@ static void zone_web_start(void)
         {.uri="/cal/jog/cancel",        .method=HTTP_POST, .handler=cal_jog_cancel_handler},
         {.uri="/cal/encoder",           .method=HTTP_GET,  .handler=cal_encoder_handler},
         {.uri="/zone/water/cancel",     .method=HTTP_POST, .handler=zone_water_cancel_handler},
+        {.uri="/zone/water/hold",       .method=HTTP_POST, .handler=zone_water_hold_handler},   // b552
         {.uri="/valve/open",            .method=HTTP_POST, .handler=valve_open_handler},   // b370
         {.uri="/valve/close",           .method=HTTP_POST, .handler=valve_close_handler},  // b370
         {.uri="/valve/goto",            .method=HTTP_GET,  .handler=valve_goto_handler},   // b372
@@ -22542,6 +22647,14 @@ bool irrigoto_aim_valve(float bearing_deg, float valve_deg)
 bool irrigoto_aim_throw(float bearing_deg, float throw_mm)
 {
     INFO("HA aim_throw: bearing=%.1f throw=%.0f mm", bearing_deg, throw_mm);
+    if (s_osc_active) {   // b552: a swing/sweep is running -- move it instead
+        s_osc_new_bearing = bearing_deg;
+        s_osc_new_throw   = throw_mm;
+        s_osc_retarget    = true;
+        INFO("aim: swing running -- retargeting it to %.1f deg / %.0f mm",
+             bearing_deg, throw_mm);
+        return true;
+    }
     float valve_deg = cal_throw_to_valve_deg(throw_mm);
     return aim_to(bearing_deg, valve_deg);
 }

@@ -48,6 +48,23 @@ cards:
         name: Right
         icon: mdi:rotate-right
         tap_action: { action: perform-action, perform_action: script.oto_right }
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Hold
+        icon: mdi:pause
+        tap_action: { action: perform-action, perform_action: script.oto_hold }
+      - type: button
+        name: Pool clean
+        icon: mdi:pool
+        tap_action: { action: perform-action, perform_action: script.oto_pool_clean }
+      - type: button
+        name: Set pool here
+        icon: mdi:map-marker-check
+        tap_action:
+          action: perform-action
+          perform_action: script.oto_pool_set_here
+          confirmation: { text: "Save the current aim as the pool centre?" }
   - type: entities
     entities:
       - entity: input_boolean.oto_mirror
@@ -57,6 +74,12 @@ cards:
       - entity: input_number.oto_sweep_minutes
       - entity: input_number.oto_step_deg
       - entity: input_number.oto_step_ft
+      - entity: input_number.oto_pool_bearing
+      - entity: input_number.oto_pool_throw_ft
+      - entity: input_number.oto_pool_width
+      - entity: input_number.oto_pool_depth_ft
+      - entity: input_number.oto_pool_minutes
+      - entity: input_number.oto_pool_rings
       - entity: input_text.oto_ip
 
 # Keyboard control: see oto_keypad_card.yaml (needs www/oto_keypad_card.js
