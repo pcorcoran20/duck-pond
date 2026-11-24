@@ -19788,7 +19788,7 @@ static void zone_web_start(void)
         {.uri="/fs/upload",             .method=HTTP_POST, .handler=fs_upload_handler},
         {.uri="/fs/delete",             .method=HTTP_POST, .handler=fs_delete_handler},
     };
-    _Static_assert(sizeof(uris)/sizeof(uris[0]) <= 78,   // b543: 77 -> 78 (/api/log GET); b543: 75 -> 77 (/wifi/scan GET, /wifi/save POST); b530: 74 -> 75 (/api/led GET); b525: 72 -> 74 (/api/winter GET+POST); b522: 70 -> 72 (/api/fault_hold GET+POST); b512: 68 -> 70 (/api/uart_log GET+POST); b489: 66 -> 68
+    _Static_assert(sizeof(uris)/sizeof(uris[0]) <= 80,   // b552: 78 -> 80 (/zone/water/hold POST); b543: 77 -> 78 (/api/log GET); b543: 75 -> 77 (/wifi/scan GET, /wifi/save POST); b530: 74 -> 75 (/api/led GET); b525: 72 -> 74 (/api/winter GET+POST); b522: 70 -> 72 (/api/fault_hold GET+POST); b512: 68 -> 70 (/api/uart_log GET+POST); b489: 66 -> 68
                    "uris[] exceeds cfg.max_uri_handlers -- raise it before httpd_start");
     for (size_t i = 0; i < sizeof(uris)/sizeof(uris[0]); i++)
         httpd_register_uri_handler(s_zone_server, &uris[i]);
