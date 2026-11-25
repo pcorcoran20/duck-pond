@@ -3,8 +3,13 @@
  *  Install (once):
  *    1. copy this file to  config/www/oto_keypad_card.js
  *    2. Settings -> Dashboards -> (top-right menu) Resources -> Add resource
- *         URL:  /local/oto_keypad_card.js      type: JavaScript module
- *       (reload the browser tab afterwards)
+ *         URL:  /local/oto_keypad_card.js?v=4   type: JavaScript module
+ *       HA serves /local/ files with a 31-day browser cache, so every time
+ *       you update this file bump the ?v= number on the resource URL (match
+ *       OTO_CARD_VERSION below) or the browser keeps running the old copy.
+ *       The grey hint line at the bottom of the card shows which version
+ *       is actually running.  Companion app: Settings -> Companion App ->
+ *       Debugging -> Reset frontend cache.
  *    3. add a Manual card:   type: custom:oto-keypad-card
  *
  *  Keys (while the dashboard is on screen and no text box has focus):
