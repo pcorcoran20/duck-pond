@@ -2362,7 +2362,18 @@ static struct {
     float          disc_baseline, disc_start, disc_end, disc_peak;
 } s_wcal;
 
-static void wcal_reset(void) { memset(&s_wcal, 0, sizeof(s_wcal)); }
+// b553: every cal start comes through here. Clear the watering-cancel flag
+// and any stale console byte first: water_set_status() (joystick OFF / HA
+// cancel) leaves s_water_abort TRUE until the next watering run clears it,
+// and the cal sweeps (pulse, continuous, encoder-gentle) poll that same flag
+// -- so a jog or speed cal started after an OFF press bailed before its
+// first pulse with "Could not measure" (2026-11-25).
+static void wcal_reset(void)
+{
+    memset(&s_wcal, 0, sizeof(s_wcal));
+    s_water_abort = false;
+    if (uart_is_driver_installed(UART_NUM_0)) uart_flush_input(UART_NUM_0);
+}
 
 // -----------------------------------------------------------------------
 // cal_post_process_scan: shared post-processing for both terminal (x) and
@@ -4537,7 +4548,7 @@ static void wcal_jog_task(void *arg)
     float jog_ring_throw = have_pcal ? cal_pressure_to_throw_mm(psi_max * 0.30f) : 0.0f;
     float jog_valve_deg  = have_pcal ? cal_pressure_to_valve_deg(psi_max * 0.30f)
                                      : VALVE_CLOSED_DEG;
-    nozzle_sweep_pulse(origin, TEST_ARC, true, 1.0f,
+    bool ok_cw = nozzle_sweep_pulse(origin, TEST_ARC, true, 1.0f,
                        pulse_duty, pulse_ms, t0, 0, 1, 0,
                        jog_valve_deg, jog_ring_throw, &psi_sum, &psi_n,
                        NULL, NULL, false);
@@ -4559,7 +4570,7 @@ static void wcal_jog_task(void *arg)
     origin = raw0 * (360.0f / 4096.0f);
     t0 = xTaskGetTickCount();
     psi_sum = 0.0f; psi_n = 0;
-    nozzle_sweep_pulse(origin, TEST_ARC, false, 1.0f,
+    bool ok_ccw = nozzle_sweep_pulse(origin, TEST_ARC, false, 1.0f,
                        pulse_duty, pulse_ms, t0, 0, 1, 0,
                        jog_valve_deg, jog_ring_throw, &psi_sum, &psi_n,
                        NULL, NULL, false);
@@ -4586,7 +4597,21 @@ static void wcal_jog_task(void *arg)
     valve_verify_closed_dry("jog-cal end", true);
     motor_rail_off();
 
-    if (have_spd && avg_dpp > 0.05f) {
+    // b553: say what actually happened instead of one blanket "check duty/ms".
+    // (jog_deg_per_pulse is recorded for reference only -- the walk / pulse
+    // paths take their duty and pulse length from the speed cal, not this.)
+    if (s_water_abort || !ok_cw || !ok_ccw) {
+        snprintf(s_wcal.msg, sizeof(s_wcal.msg), "Cancelled.");
+        s_wcal.state = WCAL_IDLE;
+        WARN("jog cal: cancelled (abort flag / console key) -- CW %.1f deg, CCW %.1f deg",
+             actual_cw, actual_ccw);
+    } else if (!have_spd) {
+        snprintf(s_wcal.msg, sizeof(s_wcal.msg),
+                 "No nozzle speed cal saved -- run the nozzle speed cal first "
+                 "(the jog result is stored inside it).");
+        s_wcal.state = WCAL_ERROR;
+        WARN("jog cal: no speed map to store the result in");
+    } else if (avg_dpp > 0.05f) {
         m.jog_deg_per_pulse = avg_dpp;
         spd_save_primary(&m);
         snprintf(s_wcal.msg, sizeof(s_wcal.msg), "Done: %.3f deg/pulse", avg_dpp);
@@ -4594,9 +4619,12 @@ static void wcal_jog_task(void *arg)
         s_wcal.progress = 100;
         PASS("jog_deg_per_pulse saved: %.3f deg/pulse", avg_dpp);
     } else {
-        snprintf(s_wcal.msg, sizeof(s_wcal.msg), "Could not measure -- check pulse duty/ms.");
+        snprintf(s_wcal.msg, sizeof(s_wcal.msg),
+                 "Nozzle did not move: CW %.1f deg, CCW %.1f deg at duty %u / %u ms "
+                 "-- check motor power, or re-run the nozzle speed cal.",
+                 actual_cw, actual_ccw, (unsigned)pulse_duty, (unsigned)pulse_ms);
         s_wcal.state = WCAL_ERROR;
-        WARN("Could not measure -- check duty/ms settings.");
+        WARN("jog cal: nozzle did not move (CW %.1f, CCW %.1f deg)", actual_cw, actual_ccw);
     }
     INFO("Done.");
     vTaskDelete(NULL);
@@ -17387,6 +17415,11 @@ static esp_err_t cal_pressure_start_handler(httpd_req_t *req)
         httpd_resp_sendstr(req, "{\"error\":\"calibration already running\"}");
         return ESP_OK;
     }
+    if (s_web_water_mode != 0 || s_exp_running || irrigoto_is_watering()) {   // b553
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"error\":\"watering is running -- stop it first\"}");
+        return ESP_OK;
+    }
     if (!batt_ok_to_start("calibration")) {   // b539
         char eb[112];
         snprintf(eb, sizeof(eb), "{\"error\":\"battery too low (%.2f V) -- charge to %.2f V or more\"}",
@@ -17611,6 +17644,11 @@ static esp_err_t cal_nozzle_start_handler(httpd_req_t *req)
     if (s_wcal.state == WCAL_PRESSURE_SCANNING ||
         s_wcal.state == WCAL_NOZZLE_RUNNING) {
         httpd_resp_sendstr(req, "{\"error\":\"calibration already running\"}");
+        return ESP_OK;
+    }
+    if (s_web_water_mode != 0 || s_exp_running || irrigoto_is_watering()) {   // b553
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"error\":\"watering is running -- stop it first\"}");
         return ESP_OK;
     }
     if (!batt_ok_to_start("calibration")) {   // b539
@@ -19020,6 +19058,11 @@ static esp_err_t cal_jog_start_handler(httpd_req_t *req)
         httpd_resp_sendstr(req, "{\"error\":\"calibration already running\"}");
         return ESP_OK;
     }
+    if (s_web_water_mode != 0 || s_exp_running || irrigoto_is_watering()) {   // b553
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, "{\"error\":\"watering is running -- stop it first\"}");
+        return ESP_OK;
+    }
     if (!batt_ok_to_start("calibration")) {   // b539
         char eb[112];
         snprintf(eb, sizeof(eb), "{\"error\":\"battery too low (%.2f V) -- charge to %.2f V or more\"}",
@@ -19039,10 +19082,20 @@ static esp_err_t cal_jog_start_handler(httpd_req_t *req)
 
 static esp_err_t cal_jog_cancel_handler(httpd_req_t *req)
 {
-    s_wcal.state = WCAL_IDLE;
-    valve_goto(VALVE_CLOSED_DEG, 2.0f, 10000, false);
-    motor_rail_off(); sensor_rail_off();
-    snprintf(s_wcal.msg, sizeof(s_wcal.msg), "Cancelled.");
+    if (s_wcal.state == WCAL_JOG_RUNNING) {
+        // b553: the task's sweeps poll s_water_abort; let it break out and do
+        // its own verified close + rail-off. Closing the valve from here while
+        // the task was still driving the motors raced it, and the task then
+        // overwrote "Cancelled." with "Could not measure".
+        s_water_abort = true;
+        snprintf(s_wcal.msg, sizeof(s_wcal.msg),
+                 "Cancelling -- stopping the sweep and closing the valve...");
+    } else {
+        s_wcal.state = WCAL_IDLE;
+        valve_goto(VALVE_CLOSED_DEG, 2.0f, 10000, false);
+        motor_rail_off(); sensor_rail_off();
+        snprintf(s_wcal.msg, sizeof(s_wcal.msg), "Cancelled.");
+    }
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"ok\":true}");
     return ESP_OK;
@@ -23329,6 +23382,10 @@ bool irrigoto_cal_pressure_start(void)
         ESP_LOGW(TAG, "cal_pressure_start ignored — calibration already running");
         return false;
     }
+    if (s_web_water_mode != 0 || s_exp_running || irrigoto_is_watering()) {   // b553
+        ESP_LOGW(TAG, "cal start ignored -- watering is running");
+        return false;
+    }
     if (!batt_ok_to_start("calibration")) return false;   // b539
     INFO("HA cal_pressure_start");
     wcal_reset();
@@ -23396,6 +23453,10 @@ bool irrigoto_cal_nozzle_start(void)
     if (s_wcal.state == WCAL_PRESSURE_SCANNING ||
         s_wcal.state == WCAL_NOZZLE_RUNNING) {
         ESP_LOGW(TAG, "cal_nozzle_start ignored — calibration already running");
+        return false;
+    }
+    if (s_web_water_mode != 0 || s_exp_running || irrigoto_is_watering()) {   // b553
+        ESP_LOGW(TAG, "cal start ignored -- watering is running");
         return false;
     }
     if (!batt_ok_to_start("calibration")) return false;   // b539

@@ -330,7 +330,7 @@ tr:last-child td{border-bottom:none;}
 <section id="jog">
   <div class="sec-hdr"><span class="sec-title">Jog Pulse Calibration</span></div>
   <div class="card">
-    <div class="note">Measures how far the nozzle moves per PWM pulse under water load. Run AFTER nozzle speed cal. With a completed pressure cal (and water connected) the valve opens to ~30% pressure; without one it runs dry with the valve closed.</div>
+    <div class="note">Measures how far the nozzle moves per PWM pulse under water load. Run AFTER nozzle speed cal. With a completed pressure cal (and water connected) the valve opens to ~30% pressure; without one it runs dry with the valve closed. The deg/pulse figure is recorded for reference: walk and pulse moves use the speed cal&rsquo;s own duty and pulse length.</div>
     <div class="btn-row">
       <button class="btn" id="jog-start-btn" onclick="jogStart()"><svg class="i"><use href="#i-play"/></svg>Run jog cal</button>
       <button class="btn btn-red" id="jog-cancel-btn" style="display:none" onclick="jogCancel()"><svg class="i"><use href="#i-square"/></svg>Cancel</button>
