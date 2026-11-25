@@ -11826,7 +11826,7 @@ typedef struct __attribute__((packed)) {
 static water_trace_sample_t s_trace_samples[WATER_TRACE_MAX_SAMPLES];
 static water_trace_ring_t   s_trace_rings  [WATER_TRACE_MAX_RINGS];
 static volatile uint16_t    s_trace_n_samples = 0;
-static volatile uint8_t     s_trace_n_rings   = 0;
+static volatile uint16_t    s_trace_n_rings   = 0;   // b553: uint8_t wrapped at 256 (cap is 400)
 static volatile bool        s_trace_active    = false;
 static          TickType_t  s_trace_t_start         = 0;
 static          TickType_t  s_trace_t_last_sample   = 0;
@@ -17182,22 +17182,22 @@ static esp_err_t api_time_handler(httpd_req_t *req)
     char body[64] = {0};
     int len = httpd_req_recv(req, body, sizeof(body) - 1);
     bool applied = false;
-    long epoch = 0;
+    long long epoch = 0;                       // b553: 64-bit -- long is 32-bit here
     if (len > 0) {
         char eps[20] = {0};
         if (httpd_query_key_value(body, "epoch", eps, sizeof(eps)) == ESP_OK)
-            epoch = atol(eps);
+            epoch = atoll(eps);
     }
-    if (epoch > 1700000000L && epoch < 4100000000L) {
+    if (epoch > 1700000000LL && epoch < 4100000000LL) {
         time_t now = time(NULL);
-        long drift = (now > 1700000000L) ? labs((long)now - epoch) : 1000000L;
+        long long drift = (now > 1700000000L) ? llabs((long long)now - epoch) : 1000000LL;
         if (now < 1700000000L || drift > 30) {
             struct timeval tv = { .tv_sec = (time_t)epoch, .tv_usec = 0 };
             settimeofday(&tv, NULL);
             applied = true;
-            INFO("Clock set from web client: epoch %ld (%s, drift %lds)",
+            INFO("Clock set from web client: epoch %lld (%s, drift %llds)",
                  epoch, (now < 1700000000L) ? "was unset" : "was valid",
-                 (now < 1700000000L) ? 0L : drift);
+                 (now < 1700000000L) ? 0LL : drift);
         }
     }
     char buf[48];
@@ -22207,7 +22207,7 @@ void irrigoto_request_winter_sleep(const char *reason)
 {
     if (reason && reason[0]) {
         strncpy(s_winter_reason, reason, sizeof(s_winter_reason) - 1);
-        s_winter_reason[sizeof(s_winter_reason) - 1] = ' ';
+        s_winter_reason[sizeof(s_winter_reason) - 1] = '\0';
     }
     s_winter_sleep_requested = true;
 }
@@ -23406,8 +23406,9 @@ bool irrigoto_cal_nozzle_start(void)
 }
 
 // Numeric cal state. Matches the wcal_state_t enum (kept opaque to C++).
-// 0=Idle, 1=PressureScan, 2=AwaitingThrow, 3=NozzleScan,
-// 4=JogRunning, 5=Done, 6=Error.
+// 0=Idle, 1=PressureScan, 2=AwaitingThrow (MAX), 3=NozzleScan,
+// 4=JogRunning, 5=Done, 6=Error, 7=AwaitingThrow (SHORT, b385).
+// Active (in-progress) = 1, 2, 3, 4, 7.  Terminal = 0, 5, 6.
 int irrigoto_cal_state_code(void)
 {
     return (int)s_wcal.state;
@@ -23418,11 +23419,14 @@ void irrigoto_cal_state_str(char *buf, size_t len)
     if (!buf || len == 0) return;
     const char *s = "Unknown";
     switch (s_wcal.state) {
-        case WCAL_IDLE:                 s = "Idle"; break;
-        case WCAL_PRESSURE_SCANNING:    s = "Pressure scanning"; break;
-        case WCAL_PRESSURE_AWAIT_THROW: s = "Awaiting throw measurement"; break;
-        case WCAL_NOZZLE_RUNNING:       s = "Nozzle calibration"; break;
-        case WCAL_DONE:                 s = "Done"; break;
+        case WCAL_IDLE:                     s = "Idle"; break;
+        case WCAL_PRESSURE_SCANNING:        s = "Pressure scanning"; break;
+        case WCAL_PRESSURE_AWAIT_THROW_LOW: s = "Awaiting SHORT throw measurement"; break;
+        case WCAL_PRESSURE_AWAIT_THROW:     s = "Awaiting MAX throw measurement"; break;
+        case WCAL_NOZZLE_RUNNING:           s = "Nozzle calibration"; break;
+        case WCAL_JOG_RUNNING:              s = "Nozzle jog"; break;
+        case WCAL_DONE:                     s = "Done"; break;
+        case WCAL_ERROR:                    s = "Error"; break;   // b553: was "Unknown" in HA
     }
     // Include the cal_status message if present for context.
     if (s_wcal.msg[0])

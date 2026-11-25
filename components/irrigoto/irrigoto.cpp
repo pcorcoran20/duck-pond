@@ -98,7 +98,10 @@ void IrrigotoComponent::loop() {
     // "Active" = scanning, awaiting throw, or nozzle scan. Done/Error/Idle
     // all count as terminal — fire on transition into any of them from
     // an active state, so cancellation also notifies HA.
-    auto cal_is_active = [](int s){ return s == 1 || s == 2 || s == 3; };
+    // b553: 7 (awaiting the SHORT throw) and 4 (nozzle jog) were missing, so
+    // every pressure cal fired a bogus "canceled" event the moment the scan
+    // reached the SHORT-throw wait, then "completed" at the end.
+    auto cal_is_active = [](int s){ return s == 1 || s == 2 || s == 3 || s == 4 || s == 7; };
     if (cal_is_active(prev_cal_state_) && !cal_is_active(cur_cal)) {
         fire_cal_complete_event_(prev_cal_state_, cur_cal);
     }
@@ -282,7 +285,7 @@ void IrrigotoComponent::loop() {
     // Gated under !quiet to reduce the NVS-write rate triggered by
     // ESPHome's state-persistence on each publish.
     if (!quiet && cal_state_sensor_ != nullptr) {
-        char buf[96];
+        char buf[256];   // b553: 96 cut the 192-char cal message (and could split the UTF-8 dash)
         irrigoto_cal_state_str(buf, sizeof(buf));
         cal_state_sensor_->publish_state(buf);
     }
@@ -767,9 +770,9 @@ void IrrigotoComponent::fire_watering_complete_event_() {
 }
 
 void IrrigotoComponent::fire_cal_complete_event_(int prev_state, int cur_state) {
-    // prev_state was active (1=PressureScan, 2=AwaitingThrow, 3=NozzleScan).
-    // cur_state is now terminal (0=Idle, 5=Done, 6=Error).
-    const char *type = (prev_state == 3) ? "nozzle" : "pressure";
+    // prev_state was active (1=PressureScan, 7/2=AwaitingThrow short/max,
+    // 3=NozzleScan, 4=NozzleJog). cur_state is now terminal (0=Idle, 5=Done, 6=Error).
+    const char *type = (prev_state == 3 || prev_state == 4) ? "nozzle" : "pressure";
     const char *status;
     switch (cur_state) {
         case 5:  status = "completed"; break;
