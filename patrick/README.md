@@ -5,8 +5,8 @@ touch this folder.
 
 | path | what |
 | --- | --- |
-| `homeassistant/irrigoto_43c89c_manual.yaml` | HA package: joystick scripts (on/off, throw ±, bearing ±, mirror, sweep a sector around the aim, swing left/right, hold = stop the swing with the water on, pool clean over a saved pool position), `input_text.oto_ip` |
-| `homeassistant/oto_keypad_card.yaml` + `www/oto_keypad_card.js` | Custom card: arrow-key control of the joystick (M mirror, S sweep, W swing, H hold, P pool clean, Esc off); arrows move a running swing |
+| `homeassistant/irrigoto_43c89c_manual.yaml` | HA package: joystick scripts (on/off, throw ±, bearing ±, mirror, sweep a sector around the aim, swing left/right, hold = stop the swing with the water on, pool clean over a pool outline you trace with the joystick -- Add point at each edge, the sector is derived), `input_text.oto_ip` |
+| `homeassistant/oto_keypad_card.yaml` + `www/oto_keypad_card.js` | Custom card: arrow-key control of the joystick (M mirror, S sweep, W swing, H hold, P pool clean, A/Z add/undo a pool outline point, Esc off); arrows move a running swing |
 | `homeassistant/irrigoto_43c89c_spots.yaml` | HA package: spot-water named trees, dry travel between them, optional schedule |
 | `homeassistant/oto_joystick_card.yaml` | Lovelace manual card for the joystick |
 | `tools/duck-pond-remote.html` | Keyboard remote. Open from disk, not through HA (HTTPS can't call the device over HTTP) |

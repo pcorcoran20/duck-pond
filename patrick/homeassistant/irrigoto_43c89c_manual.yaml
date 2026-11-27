@@ -6,6 +6,13 @@ input_text:
   oto_ip:
     name: OtO IP
     initial: "192.168.1.50"   # <- change to your reservation
+  # Pool outline: "bearing:throw_ft" tokens, one per edge point the joystick
+  # was aimed at (script.oto_pool_point_add). Up to ~25 points in 255 chars.
+  oto_pool_outline:
+    name: OtO Pool Outline
+    max: 255
+    initial: ""
+    icon: mdi:vector-polygon
 
 input_boolean:
   # Mirror: swap left/right and further/closer. Flip it on when you are
@@ -135,6 +142,14 @@ input_number:
     step: 1
     initial: 0
     icon: mdi:circle-multiple-outline
+  oto_pool_margin_ft:
+    name: OtO Pool Margin
+    min: 0
+    max: 3
+    step: 0.25
+    unit_of_measurement: ft
+    initial: 0.5
+    icon: mdi:arrow-expand-all
 
 rest_command:
   oto_aim_throw:
@@ -364,6 +379,117 @@ script:
           duration: "{{ minutes | default(states('input_number.oto_pool_minutes') | int) }}"
           rings:    "{{ rings | default(states('input_number.oto_pool_rings') | int) }}"
 
+  # Pool outline: walk the stream round the pool edge with the joystick and
+  # press "Add point" at each spot (4-8 points is plenty). The scripts keep
+  # the points in input_text.oto_pool_outline and derive the pool sector
+  # (bearing / width / throw / depth) from them, so Pool clean needs nothing
+  # typed in. Pool Margin adds a little overshoot beyond the outline.
+  # Keyboard: A = add point, Z = undo.
+  oto_pool_point_add:
+    alias: "OtO: pool outline -- add the current aim"
+    mode: queued
+    sequence:
+      - variables:
+          cur: "{{ states('input_text.oto_pool_outline') | trim }}"
+          tok: "{{ states('input_number.oto_bearing') | int }}:{{ states('input_number.oto_throw_ft') | float | round(2) }}"
+          new: "{{ (cur ~ ' ' ~ tok) | trim }}"
+      - if:
+          - condition: template
+            value_template: "{{ new | length > 255 }}"
+        then:
+          - action: persistent_notification.create
+            data:
+              notification_id: oto_pool_outline
+              title: "OtO pool outline"
+              message: "Outline is full ({{ cur.split() | count }} points) -- clear it or undo a point first."
+          - stop: "outline full"
+      - action: input_text.set_value
+        target: { entity_id: input_text.oto_pool_outline }
+        data: { value: "{{ new }}" }
+      - action: script.oto_pool_outline_apply
+
+  oto_pool_point_undo:
+    alias: "OtO: pool outline -- undo the last point"
+    mode: queued
+    sequence:
+      - action: input_text.set_value
+        target: { entity_id: input_text.oto_pool_outline }
+        data: { value: "{{ states('input_text.oto_pool_outline').split()[:-1] | join(' ') }}" }
+      - action: script.oto_pool_outline_apply
+
+  oto_pool_outline_clear:
+    alias: "OtO: pool outline -- clear"
+    sequence:
+      - action: input_text.set_value
+        target: { entity_id: input_text.oto_pool_outline }
+        data: { value: "" }
+
+  # Derive the pool sector from the outline points. Bearings: the arc is the
+  # complement of the largest gap between sorted bearings (so an outline
+  # straddling north works). Throws: min..max plus the margin. One point =
+  # centre only (same as "Set pool here"); no points = leave everything alone.
+  oto_pool_outline_apply:
+    alias: "OtO: pool outline -- derive the pool sector"
+    mode: queued
+    sequence:
+      - variables:
+          margin: "{{ states('input_number.oto_pool_margin_ft') | float(0.5) }}"
+          cur_width: "{{ states('input_number.oto_pool_width') | float(40) }}"
+          cur_depth: "{{ states('input_number.oto_pool_depth_ft') | float(4) }}"
+          sector: >-
+            {% set raw = states('input_text.oto_pool_outline') %}
+            {% set ns = namespace(b=[], t=[]) %}
+            {% for tok in raw.split() if ':' in tok %}
+              {% set p = tok.split(':') %}
+              {% set ns.b = ns.b + [(p[0] | float(0)) % 360] %}
+              {% set ns.t = ns.t + [p[1] | float(0)] %}
+            {% endfor %}
+            {% set n = ns.b | count %}
+            {% if n == 0 %}
+              {{ none }}
+            {% else %}
+              {% set near = [(ns.t | min) - margin, 2] | max %}
+              {% set far  = [(ns.t | max) + margin, 20] | min %}
+              {% if far < near + 1 %}{% set far = [near + 1, 20] | min %}{% set near = far - 1 %}{% endif %}
+              {% set centre_t = (near + far) / 2 %}
+              {% set depth = far - near %}
+              {% if n == 1 %}
+                {% set centre_b = ns.b[0] %}
+                {% set centre_t = ns.t[0] %}
+                {% set width = cur_width %}
+                {% set depth = cur_depth %}
+              {% else %}
+                {% set bs = ns.b | sort %}
+                {% set g = namespace(best=-1, k=0) %}
+                {% for i in range(n) %}
+                  {% set gap = (bs[0] + 360 - bs[n - 1]) if i == n - 1 else (bs[i + 1] - bs[i]) %}
+                  {% if gap > g.best %}{% set g.best = gap %}{% set g.k = i %}{% endif %}
+                {% endfor %}
+                {% set start = bs[(g.k + 1) % n] %}
+                {% set span = 360 - g.best %}
+                {% set width = span + 2 * (margin / centre_t) * 57.3 %}
+                {% set centre_b = (start + span / 2) % 360 %}
+              {% endif %}
+              {{ {'bearing': (centre_b | round(0) | int) % 360,
+                  'width':   [[(((width / 5) | round(0)) * 5) | int, 10] | max, 300] | min,
+                  'throw':   [[((centre_t * 4) | round(0)) / 4, 2] | max, 20] | min,
+                  'depth':   [[((depth * 2) | round(0)) / 2, 1] | max, 18] | min} }}
+            {% endif %}
+      - condition: template
+        value_template: "{{ sector is mapping }}"
+      - action: input_number.set_value
+        target: { entity_id: input_number.oto_pool_bearing }
+        data: { value: "{{ sector.bearing }}" }
+      - action: input_number.set_value
+        target: { entity_id: input_number.oto_pool_width }
+        data: { value: "{{ sector.width }}" }
+      - action: input_number.set_value
+        target: { entity_id: input_number.oto_pool_throw_ft }
+        data: { value: "{{ sector.throw }}" }
+      - action: input_number.set_value
+        target: { entity_id: input_number.oto_pool_depth_ft }
+        data: { value: "{{ sector.depth }}" }
+
   # Hands-free: run a saved zone from the OtO's own zone list.
   oto_water_zone:
     alias: "OtO: water zone"
@@ -375,3 +501,14 @@ script:
         data:
           zone_id: "{{ zone_id }}"
           mode: "{{ mode | default('smooth') }}"
+
+template:
+  - sensor:
+      - name: "OtO Pool Outline Summary"
+        unique_id: oto_pool_outline_summary
+        icon: mdi:pool
+        state: >-
+          {% set n = states('input_text.oto_pool_outline').split() | count %}
+          {% if n == 0 %}no outline -- aim at the pool edge and press Add point
+          {% else %}{{ n }} pt{{ 's' if n != 1 }} · {{ states('input_number.oto_pool_bearing') | int }}° ± {{ (states('input_number.oto_pool_width') | float(0) / 2) | round(0) | int }}° · {{ states('input_number.oto_pool_throw_ft') | float(0) }} ft ± {{ (states('input_number.oto_pool_depth_ft') | float(0) / 2) | round(2) }} ft
+          {% endif %}

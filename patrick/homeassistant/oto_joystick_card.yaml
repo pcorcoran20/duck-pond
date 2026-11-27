@@ -65,6 +65,28 @@ cards:
           action: perform-action
           perform_action: script.oto_pool_set_here
           confirmation: { text: "Save the current aim as the pool centre?" }
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Add point
+        icon: mdi:map-marker-plus
+        tap_action: { action: perform-action, perform_action: script.oto_pool_point_add }
+      - type: button
+        name: Undo point
+        icon: mdi:undo
+        tap_action: { action: perform-action, perform_action: script.oto_pool_point_undo }
+      - type: button
+        name: Clear outline
+        icon: mdi:map-marker-off
+        tap_action:
+          action: perform-action
+          perform_action: script.oto_pool_outline_clear
+          confirmation: { text: "Forget all pool outline points?" }
+  - type: entities
+    entities:
+      - entity: sensor.oto_pool_outline_summary
+        name: Pool outline
+      - entity: input_number.oto_pool_margin_ft
   - type: entities
     entities:
       - entity: input_boolean.oto_mirror
