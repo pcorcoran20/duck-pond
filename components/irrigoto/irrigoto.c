@@ -10914,6 +10914,7 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
     uint32_t   total_ms   = (uint32_t)duration_min * 60u * 1000u;
     uint32_t   last_log_s = 0;
     int        swings     = 0;
+    bool       valve_pending = false;   // b553: joystick throw change waiting for the next edge
     while (!s_water_abort && !s_osc_hold) {
         uint32_t elapsed_ms = (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount() - t_start);
         if (elapsed_ms >= total_ms) break;
@@ -10938,23 +10939,17 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
                     if (v > VALVE_OPEN_DEG)      v = VALVE_OPEN_DEG;
                     ring_v[i] = v;
                 }
-                // Ease the nozzle to a stop, step the valve to the shifted
-                // ring, kick the nozzle back up in the same direction.
-                for (int i = 4; i >= 1; i--) {
-                    chase_motor_apply(&nm, n_dir, (uint16_t)(NOZZLE_MIN_DUTY * i / 5));
-                    vTaskDelay(pdMS_TO_TICKS(20));
-                }
-                chase_motor_apply(&nm, n_dir, 0);
-                valve_goto_ex(ring_v[ring], 0.8f, 4000, false, s_valve_last_dir);
-                s_valve_last_dir = +1;
-                chase_motor_apply(&nm, n_dir, (uint16_t)(NOZZLE_DUTY + 60));
-                vTaskDelay(pdMS_TO_TICKS(40));
-                chase_motor_apply(&nm, n_dir, NOZZLE_DUTY);
-                lockout = LOCKOUT_TICKS;
+                // b553: don't stop the nozzle mid-arc for the valve step. On
+                // a narrow swing the ease-stop, blocking valve move and kick
+                // coasted the nozzle 2-3 deg past the edge and read as a
+                // sideways lurch ("further/closer moves it left/right").
+                // Step the valve at the next edge instead -- the nozzle turns
+                // round there anyway, so the pause looks natural.
+                valve_pending = true;
             }
-            INFO("Oscillate: retarget -> centre %.1f deg, %.0f mm (arc %.1f..%.1f, ring %d valve %.1f)",
+            INFO("Oscillate: retarget -> centre %.1f deg, %.0f mm (arc %.1f..%.1f, ring %d valve %.1f%s)",
                  nb, band_centre, arc_lo, fmodf(arc_lo + arc_span, 360.0f),
-                 ring + 1, ring_v[ring]);
+                 ring + 1, ring_v[ring], valve_pending ? " at next edge" : "");
             if (s_water_abort) break;
         }
 
@@ -10990,8 +10985,23 @@ static void phase_oscillate_run(float arc_lo, float arc_span,
                 ring += ring_dir;
                 valve_goto_ex(ring_v[ring], 0.8f, 4000, false, s_valve_last_dir);
                 s_valve_last_dir = +1;
+                valve_pending = false;          // b553: ring_v[] already holds the shifted throw
                 INFO("  Oscillate: edge at b=%.1f -> ring %d (%.0f mm, valve %.1f), swing %d",
                      cur_b, ring + 1, ring_mm[ring], ring_v[ring], swings);
+                if (s_water_abort) break;
+            } else if (valve_pending) {
+                // b553: single-ring swing -- apply the joystick's throw change
+                // here at the turnaround (ease to a stop, step, U-turn below).
+                for (int i = 4; i >= 1; i--) {
+                    chase_motor_apply(&nm, n_dir, (uint16_t)(NOZZLE_MIN_DUTY * i / 5));
+                    vTaskDelay(pdMS_TO_TICKS(20));
+                }
+                chase_motor_apply(&nm, n_dir, 0);
+                valve_goto_ex(ring_v[ring], 0.8f, 4000, false, s_valve_last_dir);
+                s_valve_last_dir = +1;
+                valve_pending = false;
+                INFO("  Swing: edge at b=%.1f -> valve %.1f (joystick throw), swing %d",
+                     cur_b, ring_v[ring], swings);
                 if (s_water_abort) break;
             } else if ((swings % 10) == 1) {
                 INFO("  Swing: edge at b=%.1f, swing %d", cur_b, swings);
